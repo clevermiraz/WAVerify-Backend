@@ -1,0 +1,20 @@
+[project]
+name = "waverify-api"
+version = "1.0.0"
+description = "WhatsApp number verification API"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = ["B008"]  # FastAPI dependencies are function calls in defaults by design
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

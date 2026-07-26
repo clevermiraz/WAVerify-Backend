@@ -1,0 +1,64 @@
+name: waverify
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-waverify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waverify}
+      POSTGRES_DB: ${POSTGRES_DB:-waverify}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-waverify}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  backend:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env — generate with `openssl rand -hex 32`}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-waverify}:${POSTGRES_PASSWORD:-waverify}@postgres:5432/${POSTGRES_DB:-waverify}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
+      LOG_JSON: ${LOG_JSON:-true}
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-admin@waverify.dev}
+      FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-admin12345}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+    volumes:
+      - wa_session_data:/app/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  wa_session_data:
