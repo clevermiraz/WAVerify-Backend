@@ -37,7 +37,11 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(encoded, bcrypt.gensalt()).decode("utf-8")
 
 
-def verify_password(plain: str, hashed: str) -> bool:
+def verify_password(plain: str, hashed: str | None) -> bool:
+    # A Google-only account has no hash; nothing can match it. Callers that
+    # care about timing must substitute a dummy hash before reaching here.
+    if hashed is None:
+        return False
     encoded = plain.encode("utf-8")
     if len(encoded) > _MAX_PASSWORD_BYTES:
         return False

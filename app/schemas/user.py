@@ -17,6 +17,11 @@ class UserRead(ORMModel):
     is_email_verified: bool
     created_at: datetime
     last_login_at: datetime | None
+    # Which sign-in methods this account actually has, so the dashboard can
+    # hide password controls from Google-only users instead of showing forms
+    # that are guaranteed to fail.
+    has_password: bool
+    has_google: bool
 
 
 class UserUpdate(BaseModel):
@@ -25,4 +30,6 @@ class UserUpdate(BaseModel):
 
 
 class DeleteAccountRequest(BaseModel):
-    password: str = Field(min_length=1, max_length=72)
+    # Optional: a Google-only account has no password to confirm with. The
+    # request is still authenticated by the access token.
+    password: str | None = Field(default=None, max_length=72)

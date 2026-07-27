@@ -1,107 +1,215 @@
-# WAVerify - Backend
+# WAVerify — Backend
 
-WAVerify is a simple and efficient service that allows users to check whether a given phone number is registered on WhatsApp. 
+WAVerify tells you if a phone number has a WhatsApp account.
 
-This repository contains the backend component, built with **FastAPI**, **PostgreSQL**, and **Redis**.
+This is the backend. It is built with **FastAPI**, **PostgreSQL** and **Redis**.
 
-## Tech Stack
-- **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python)
-- **Database**: PostgreSQL (with SQLAlchemy and Alembic for migrations)
-- **Cache**: Redis
-- **Containerization**: Docker & Docker Compose
+In production it runs at **https://api.waverify.app**. The website that uses it
+lives at **https://waverify.app** (see the `WAVerify-Frontend` repository).
 
 ---
 
-## Quick Start Guide
+## What you need first
 
-### Prerequisites
-Make sure you have the following installed on your machine:
-- [Python 3.10+](https://www.python.org/downloads/)
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
+Install these on your computer:
 
-### 1. Environment Setup
-Clone the repository and navigate to the project directory.
+- [Python 3.12 or newer](https://www.python.org/downloads/)
+- [Docker](https://docs.docker.com/get-docker/) and
+  [Docker Compose](https://docs.docker.com/compose/install/)
 
-Copy the example environment variables file and configure it:
+---
+
+## Quick start with Docker
+
+This is the easiest way. Docker starts the API, the database and the cache
+together.
+
+**Step 1 — copy the settings file:**
+
 ```bash
 cp .env.example .env
 ```
-Open the `.env` file and generate a `SECRET_KEY`. You can generate a secure key using your terminal:
+
+**Step 2 — create a secret key.** Run this command:
+
 ```bash
 openssl rand -hex 32
 ```
-Paste the generated output as the `SECRET_KEY` in your `.env` file.
 
-### 2. Running with Docker (Recommended)
-You can easily spin up the backend, database, and Redis cache using Docker Compose:
+Copy the long text it prints. Open `.env` and paste it as the value of
+`SECRET_KEY`. The app will not start without it.
+
+**Step 3 — start everything:**
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
-*Note: If the `docker-compose.yml` expects a specific build context, make sure you're running it from the correct directory level.*
 
-The API will now be accessible at `http://localhost:8000`.
-You can view the interactive API documentation (Swagger UI) at `http://localhost:8000/docs`.
+That is all. The API now runs at `http://localhost:8000`.
 
-### 3. Running for Local Development (Without Docker for the API)
-If you prefer to run the FastAPI app locally for development while using Docker for the databases:
+Open `http://localhost:8000/docs` in your browser to read the API reference and
+try requests.
 
-1. **Start the databases**:
-   You can start just PostgreSQL and Redis using Docker:
-   ```bash
-   docker-compose up postgres redis -d
-   ```
-
-2. **Create a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   pip install -r requirements-dev.txt
-   ```
-
-4. **Run database migrations**:
-   ```bash
-   alembic upgrade head
-   ```
-
-5. **Start the development server**:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-The application will be running at `http://localhost:8000`.
-
-### 4. Running Tests
-
-The test suite relies on a real PostgreSQL and Redis database. The tests automatically mock the WhatsApp provider for safe execution.
-
-1. **Start the database containers** (if not already running):
-   ```bash
-   docker-compose up postgres redis -d
-   ```
-
-2. **Create the test database**:
-   Run the following command to create an isolated database for tests (so it doesn't overwrite your local development data):
-   ```bash
-   docker-compose exec postgres psql -U waverify -c 'CREATE DATABASE waverify_test;'
-   ```
-
-3. **Run the test suite**:
-   If your `docker-compose.yml` or `.env` maps Postgres to port `5433` and Redis to port `6380`, you must pass those URLs when running tests:
-   ```bash
-   TEST_DATABASE_URL="postgresql+psycopg://waverify:waverify@localhost:5433/waverify_test" \
-   TEST_REDIS_URL="redis://localhost:6380/15" \
-   pytest tests/
-   ```
+> **Note:** `/docs`, `/redoc` and `/openapi.json` work only when `ENVIRONMENT`
+> is *not* `production`. They describe every route, including the admin API, so
+> they are switched off on the live server. The customer-facing reference is the
+> `/docs` page on the website instead.
 
 ---
-## Project Structure
-- `app/`: The core FastAPI application (routes, models, schemas).
-- `alembic/`: Database migration scripts.
-- `tests/`: Test cases.
-- `scripts/`: Utility scripts.
+
+## Running without Docker
+
+Use this if you want to change the code and see the result immediately.
+
+**Step 1 — start only the database and cache:**
+
+```bash
+docker compose up postgres redis -d
+```
+
+**Step 2 — make a virtual environment:**
+
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+On Windows, use `venv\Scripts\activate` instead.
+
+**Step 3 — install the packages:**
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+**Step 4 — set up the database tables:**
+
+```bash
+alembic upgrade head
+```
+
+Run this again any time you pull new code that changes the database.
+
+**Step 5 — start the server:**
+
+```bash
+uvicorn app.main:app --reload
+```
+
+The API runs at `http://localhost:8000`. It restarts by itself when you save a
+file.
+
+---
+
+## Turning on "Sign in with Google"
+
+This is optional. If you skip it, people can still sign up with an email
+address and a password.
+
+**Step 1 —** go to the
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials) and
+create an **OAuth client ID**. Choose **Web application** as the type.
+
+**Step 2 —** under *Authorised JavaScript origins*, add the addresses of your
+website:
+
+```
+http://localhost:3000
+https://waverify.app
+```
+
+**Step 3 —** copy the **Client ID**. Put it in your `.env`:
+
+```
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+**Step 4 —** put the *same* value in the frontend, as
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID`. The two must match, because the backend checks
+that Google made the token for this exact application.
+
+You do **not** need the client secret. The frontend gets a signed ID token from
+Google, and the backend checks that signature. No secret is involved.
+
+If `GOOGLE_CLIENT_ID` is empty, `POST /api/v1/auth/google` replies that Google
+sign-in is turned off.
+
+### How it works
+
+1. The person clicks "Continue with Google" on the website.
+2. Google gives the website a signed ID token.
+3. The website sends that token to `POST /api/v1/auth/google`.
+4. The backend checks the signature, checks the token was made for this app,
+   and checks that Google says the email address is verified.
+5. The backend finds or creates the user, then returns our own access token and
+   refresh token — the same ones a normal login returns.
+
+An account created this way has no password. That user can still set one later
+using the "forgot password" link.
+
+---
+
+## Running the tests
+
+The tests need a real PostgreSQL and a real Redis. They do not call WhatsApp —
+that part is replaced with a fake during tests, so nothing is sent to real
+phone numbers.
+
+**Step 1 — make sure the database and cache are running:**
+
+```bash
+docker compose up postgres redis -d
+```
+
+**Step 2 — create a separate database for tests.** This keeps your normal data
+safe:
+
+```bash
+docker compose exec postgres psql -U waverify -c 'CREATE DATABASE waverify_test;'
+```
+
+**Step 3 — run the tests:**
+
+```bash
+pytest tests/
+```
+
+If your `.env` uses different ports (for example 5433 for Postgres and 6380 for
+Redis), tell the tests where to look:
+
+```bash
+TEST_DATABASE_URL="postgresql+psycopg://waverify:waverify@localhost:5433/waverify_test" \
+TEST_REDIS_URL="redis://localhost:6380/15" \
+pytest tests/
+```
+
+---
+
+## Settings to change before going live
+
+Open `.env` and check these:
+
+| Setting | Why it matters |
+| --- | --- |
+| `ENVIRONMENT` | Set to `production`. This switches new API keys from `wav_test_` to `wav_live_`, and turns off `/docs`, `/redoc` and `/openapi.json`. |
+| `SECRET_KEY` | Must be long and random. Anyone who knows it can create valid login tokens. |
+| `REQUIRE_EMAIL_VERIFICATION` | Set to `true`, so unconfirmed sign-ups cannot use your quota. |
+| `CORS_ORIGINS` | List only your own website addresses, separated by commas. |
+| `FIRST_ADMIN_PASSWORD` | Change it. The example value is public. |
+| `EMAIL_BACKEND` | Set to `smtp` and fill in the SMTP settings, or no email is ever sent. |
+
+---
+
+## Where things are
+
+| Folder | What is inside |
+| --- | --- |
+| `app/api/` | The URLs people call. |
+| `app/services/` | The business rules. |
+| `app/repositories/` | Database reads and writes. |
+| `app/models/` | The database tables. |
+| `app/schemas/` | The shape of each request and reply. |
+| `alembic/` | Database change scripts. |
+| `tests/` | The tests. |
+| `scripts/` | Small helper scripts. |

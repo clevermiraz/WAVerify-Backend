@@ -20,25 +20,56 @@ from app.services.providers.registry import get_provider, shutdown_provider
 logger = get_logger(__name__)
 
 DESCRIPTION = """
-Verify whether a phone number has a WhatsApp account.
+Send a phone number. Find out if it has a WhatsApp account.
 
-## Authentication
+## Base URL
 
-Send your API key in the `X-API-Key` header:
+```
+https://api.waverify.app
+```
+
+Always use `https`. Plain `http` does not work.
+
+## Your API key
+
+Send your key in a header called `X-API-Key`:
 
 ```
 X-API-Key: wav_live_xxxxxxxxxxxxxxxxxxxx
 ```
 
-Dashboard sessions authenticate with a Bearer access token instead.
+You see the full key only once, when you create it in the dashboard. We do not
+keep a copy, so we cannot show it to you again. Save it somewhere safe.
+
+Keep the key in an environment variable. Do not write it in your code, and do
+not upload it to GitHub. If someone else gets your key, delete it in the
+dashboard and make a new one.
+
+If you are signed in to the dashboard, your session uses a short-lived Bearer
+token instead. Both work on the same endpoints.
 
 ## Errors
 
-Every non-2xx response uses the same envelope:
+Every error looks the same:
 
 ```json
 { "success": false, "error": { "code": "quota_exceeded", "message": "…", "details": {} } }
 ```
+
+In your code, check `error.code`. Do not check the message text — the wording
+can change, but the code will not.
+
+## Limits
+
+There are two separate limits.
+
+1. **Requests per minute.** If you go over, you get `429` with the code
+   `rate_limit_exceeded`. Wait a short time, then try again.
+2. **Requests per month.** When you use them all, you get `402` with the code
+   `quota_exceeded`. You can upgrade your plan at any time.
+
+Checking the same number twice in a short time returns a saved result, marked
+`cached: true`. It is faster, but it still counts towards your monthly total.
 """
 
 
@@ -57,13 +88,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    # The schema documents every route, including the whole admin API, so the
+    # interactive docs are switched off in production rather than advertising
+    # that surface. `openapi_url` goes too — leaving it on would keep the
+    # machine-readable version of exactly the same information public.
+    docs_enabled = not settings.is_production
+
     app = FastAPI(
         title=settings.PROJECT_NAME,
         description=DESCRIPTION,
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
         lifespan=lifespan,
     )
 

@@ -6,6 +6,7 @@ from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
     ForgotPasswordRequest,
+    GoogleLoginRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -35,6 +36,19 @@ def register(payload: RegisterRequest, auth: AuthServiceDep) -> AuthResponse:
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, auth: AuthServiceDep) -> AuthResponse:
     user = auth.authenticate(email=payload.email, password=payload.password)
+    return AuthResponse(user=UserRead.model_validate(user), tokens=auth.issue_tokens(user))
+
+
+@router.post("/google", response_model=AuthResponse)
+def google_login(payload: GoogleLoginRequest, auth: AuthServiceDep) -> AuthResponse:
+    """Sign in (or sign up) with a Google ID token.
+
+    Returns the same envelope as `/login`, so the client stores tokens and
+    hydrates the session through exactly one code path regardless of how the
+    user authenticated. A first-time Google user is created with a Free plan
+    and no verification email — Google has already verified the address.
+    """
+    user, _created = auth.google_login(payload.credential)
     return AuthResponse(user=UserRead.model_validate(user), tokens=auth.issue_tokens(user))
 
 

@@ -26,6 +26,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
 
+class GoogleLoginRequest(BaseModel):
+    """The `credential` returned by Google Identity Services — an ID token.
+
+    An ID token is used rather than an OAuth access token because it is a
+    signed JWT carrying an `aud` claim, which lets the backend prove the token
+    was issued for *this* application. An access token carries no such proof,
+    so one minted for any other Google app would otherwise be accepted here.
+    """
+
+    credential: str = Field(min_length=1, max_length=8192)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

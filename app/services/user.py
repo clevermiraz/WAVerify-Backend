@@ -25,8 +25,12 @@ class UserService:
             company=company.strip() if company else None,
         )
 
-    def delete_account(self, user: User, *, password: str) -> None:
-        if not verify_password(password, user.hashed_password):
+    def delete_account(self, user: User, *, password: str | None) -> None:
+        # Google-only accounts have no password to confirm with; the access
+        # token on the request is the only credential they ever have.
+        if user.has_password and not verify_password(
+            password or "", user.hashed_password
+        ):
             raise AuthenticationError("Password is incorrect.")
         if user.is_admin:
             # Removing the last admin would lock everyone out of the panel.

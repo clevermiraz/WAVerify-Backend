@@ -22,7 +22,14 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Null for accounts created through Google, which never have a local
+    # password. Every read has to tolerate that — see `has_password`.
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Google's `sub` claim: stable per (user, OAuth client) and immutable, so
+    # it survives the user changing their Google email address.
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
     full_name: Mapped[str | None] = mapped_column(String(150))
     company: Mapped[str | None] = mapped_column(String(150))
 
@@ -53,6 +60,15 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     @property
     def is_admin(self) -> bool:
         return self.role is UserRole.ADMIN
+
+    @property
+    def has_password(self) -> bool:
+        """False for Google-only accounts, which cannot use password flows."""
+        return self.hashed_password is not None
+
+    @property
+    def has_google(self) -> bool:
+        return self.google_sub is not None
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<User {self.email}>"

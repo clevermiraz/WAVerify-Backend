@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     # --- Application -----------------------------------------------------
     PROJECT_NAME: str = "WAVerify"
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
-    DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True
@@ -34,6 +33,13 @@ class Settings(BaseSettings):
     REQUIRE_EMAIL_VERIFICATION: bool = False
     PASSWORD_RESET_EXPIRE_HOURS: int = 2
     ALGORITHM: str = "HS256"
+
+    # --- Google sign-in ---------------------------------------------------
+    # The OAuth *client ID* only. The client secret is deliberately absent:
+    # the frontend obtains an ID token via Google Identity Services and we
+    # verify its signature and `aud` claim, which needs no secret.
+    # Unset disables the /auth/google endpoint.
+    GOOGLE_CLIENT_ID: str | None = None
 
     # --- Datastores ------------------------------------------------------
     DATABASE_URL: str
@@ -60,7 +66,7 @@ class Settings(BaseSettings):
     # `console` writes the message to the structured log, which is all the
     # MVP needs. A real SMTP/provider backend can be added alongside it.
     EMAIL_BACKEND: Literal["console", "smtp"] = "console"
-    EMAIL_FROM: str = "no-reply@waverify.dev"
+    EMAIL_FROM: str = "no-reply@waverify.app"
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
@@ -81,6 +87,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
+
+    @property
+    def google_login_enabled(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID)
 
 
 @lru_cache

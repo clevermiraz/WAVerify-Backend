@@ -14,6 +14,10 @@ class UserRepository(BaseRepository[User]):
     def email_exists(self, email: str) -> bool:
         return self.get_by_email(email) is not None
 
+    def get_by_google_sub(self, google_sub: str) -> User | None:
+        stmt = select(User).where(User.google_sub == google_sub)
+        return self.session.scalars(stmt).first()
+
     def search(
         self,
         *,

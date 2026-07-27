@@ -3,12 +3,14 @@ annotated-types==0.8.0
 anyio==4.14.2
 bcrypt==4.2.1
 beautifulsoup4==4.15.0
+cachetools==5.5.2
 certifi==2026.7.22
 charset-normalizer==3.4.9
 click==8.4.2
 dnspython==2.8.0
 email_validator==2.2.0
 fastapi==0.115.6
+google-auth==2.56.2
 h11==0.16.0
 httpcore==1.0.9
 httptools==0.8.0
@@ -21,10 +23,12 @@ neonize==0.4.3.post0
 phonenumbers==8.13.52
 pillow==12.3.0
 protobuf==7.35.1
-psycopg==3.2.3
 psycopg-binary==3.2.3
-pydantic==2.10.4
+psycopg==3.2.3
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
 pydantic-settings==2.7.0
+pydantic==2.10.4
 pydantic_core==2.27.2
 PyJWT==2.10.1
 python-dotenv==1.2.2
@@ -33,6 +37,7 @@ python-multipart==0.0.20
 PyYAML==6.0.3
 redis==5.2.1
 requests==2.34.2
+rsa==4.9.1
 segno==1.6.6
 soupsieve==2.9.1
 SQLAlchemy==2.0.36

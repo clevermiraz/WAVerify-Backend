@@ -11,24 +11,48 @@ class CheckRequest(BaseModel):
     phone: str = Field(
         min_length=6,
         max_length=20,
-        description="Phone number in international format, e.g. +8801712345678.",
+        description=(
+            "The phone number to check, in international format: a + sign, "
+            "then the country code, then the number. Spaces, dashes and "
+            "brackets are removed for you."
+        ),
         examples=["+8801712345678"],
     )
 
 
 class CheckResponse(BaseModel):
-    """Public API contract for `POST /api/v1/check`."""
+    """What `POST /api/v1/check` sends back."""
 
-    success: bool = True
-    phone: str
-    exists: bool
-    display_name: str | None = None
-    about: str | None = None
-    business: bool = False
-    profile_photo: str | None = None
-    response_time_ms: int
-    cached: bool = False
-    checked_at: datetime
+    success: bool = Field(default=True, description="Always true when the request worked.")
+    phone: str = Field(
+        description="The number you sent, rewritten in the standard international format."
+    )
+    exists: bool = Field(description="true if this number has a WhatsApp account.")
+    display_name: str | None = Field(
+        default=None, description="The name on the account. null if the account hides it."
+    )
+    about: str | None = Field(
+        default=None,
+        description="The short 'about' text on the account. null if the account hides it.",
+    )
+    business: bool = Field(
+        default=False, description="true if this is a WhatsApp Business account."
+    )
+    profile_photo: str | None = Field(
+        default=None,
+        description="Link to the profile picture. null if the account hides it.",
+    )
+    response_time_ms: int = Field(
+        description="How long the check took on our server, in milliseconds."
+    )
+    cached: bool = Field(
+        default=False,
+        description=(
+            "true if we answered from a saved recent result instead of checking "
+            "again. It still counts towards your monthly total."
+        ),
+    )
+    checked_at: datetime = Field(description="Date and time of the check, in UTC.")
 
     model_config = {
         "json_schema_extra": {
@@ -39,7 +63,7 @@ class CheckResponse(BaseModel):
                 "display_name": "John Doe",
                 "about": "Software Engineer",
                 "business": False,
-                "profile_photo": "https://cdn.waverify.dev/p/9f2c.jpg",
+                "profile_photo": "https://cdn.waverify.app/p/9f2c.jpg",
                 "response_time_ms": 214,
                 "cached": False,
                 "checked_at": "2026-07-23T10:04:11Z",

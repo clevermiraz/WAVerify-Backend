@@ -4,6 +4,9 @@ import uuid
 from datetime import UTC, datetime
 
 import redis
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -34,6 +37,9 @@ from app.services.email import EmailService
 logger = get_logger(__name__)
 
 _REVOKED_PREFIX = "auth:revoked_refresh:"
+
+# Google mints ID tokens under exactly these issuers.
+_GOOGLE_ISSUERS = frozenset({"accounts.google.com", "https://accounts.google.com"})
 
 
 class AuthService:
@@ -81,10 +87,17 @@ class AuthService:
 
     def authenticate(self, *, email: str, password: str) -> User:
         user = self.users.get_by_email(email)
-        # Hash even when the user is missing so response time does not reveal
-        # which addresses are registered.
-        stored_hash = user.hashed_password if user else _DUMMY_HASH
+        # Hash even when the user is missing — or has no password because they
+        # signed up with Google — so response time does not reveal which
+        # addresses are registered or how they authenticate.
+        stored_hash = user.hashed_password if user and user.hashed_password else _DUMMY_HASH
         password_ok = verify_password(password, stored_hash)
+
+        # Deliberately the same rejection a Google-only account gets as a
+        # wrong password: saying "this account uses Google" here would confirm
+        # the address exists.
+        if user is not None and not user.has_password:
+            raise AuthenticationError("Incorrect email or password.")
 
         if user is None or not password_ok:
             raise AuthenticationError("Incorrect email or password.")
@@ -133,6 +146,95 @@ class AuthService:
         ttl = max(1, int(exp - datetime.now(UTC).timestamp())) if exp else 60
         self.redis.setex(f"{_REVOKED_PREFIX}{jti}", ttl, "1")
 
+    # --- Google sign-in ---------------------------------------------------
+
+    def google_login(self, credential: str) -> tuple[User, bool]:
+        """Verify a Google ID token and return `(user, created)`."""
+        claims = self._verify_google_credential(credential)
+
+        google_sub = claims["sub"]
+        email = claims["email"].strip().lower()
+        full_name = (claims.get("name") or "").strip() or None
+
+        user = self.users.get_by_google_sub(google_sub)
+        created = False
+
+        if user is None:
+            existing = self.users.get_by_email(email)
+            if existing is None:
+                user = self._create_google_user(
+                    email=email, google_sub=google_sub, full_name=full_name
+                )
+                created = True
+            elif existing.google_sub is None:
+                # Link. Safe only because Google asserted `email_verified` for
+                # this address, which is checked in _verify_google_credential:
+                # linking on an unverified address would let anyone who can
+                # claim it take over an existing password account.
+                user = self.users.update(
+                    existing,
+                    google_sub=google_sub,
+                    is_email_verified=True,
+                    email_verified_at=existing.email_verified_at or datetime.now(UTC),
+                )
+                logger.info("auth.google_linked", user_id=str(user.id))
+            else:
+                # The address is already bound to a *different* Google account.
+                raise AuthenticationError(
+                    "This email is already linked to another Google account."
+                )
+
+        if not user.is_active:
+            raise AuthenticationError("This account has been deactivated.")
+
+        self.users.update(user, last_login_at=datetime.now(UTC))
+        logger.info("auth.google_login", user_id=str(user.id), created=created)
+        return user, created
+
+    def _verify_google_credential(self, credential: str) -> dict:
+        if not settings.google_login_enabled:
+            raise ValidationError("Google sign-in is not enabled on this server.")
+
+        try:
+            # Verifies the signature against Google's public keys, that the
+            # token has not expired, and that `aud` matches our client ID.
+            claims = google_id_token.verify_oauth2_token(
+                credential,
+                google_requests.Request(),
+                settings.GOOGLE_CLIENT_ID,
+            )
+        except (GoogleAuthError, ValueError) as exc:
+            logger.info("auth.google_token_rejected", error=str(exc))
+            raise AuthenticationError("Google sign-in could not be verified.") from exc
+
+        # Belt and braces: the library checks this, but an issuer mismatch is
+        # the difference between a Google identity and an attacker-chosen one.
+        if claims.get("iss") not in _GOOGLE_ISSUERS:
+            raise AuthenticationError("Google sign-in could not be verified.")
+        if not claims.get("sub") or not claims.get("email"):
+            raise AuthenticationError("Google did not return an email address.")
+        if not claims.get("email_verified"):
+            raise AuthenticationError(
+                "Your Google account's email address is not verified."
+            )
+        return claims
+
+    def _create_google_user(
+        self, *, email: str, google_sub: str, full_name: str | None
+    ) -> User:
+        now = datetime.now(UTC)
+        user = self.users.create(
+            email=email,
+            hashed_password=None,  # No local password; Google is the factor.
+            google_sub=google_sub,
+            full_name=full_name,
+            is_email_verified=True,
+            email_verified_at=now,
+        )
+        self.billing.create_default_subscription(user.id)
+        logger.info("auth.google_registered", user_id=str(user.id))
+        return user
+
     # --- Email verification ----------------------------------------------
 
     def verify_email(self, token: str) -> User:
@@ -163,9 +265,12 @@ class AuthService:
         user = self.users.get_by_email(email)
         if user is None or not user.is_active:
             return
+        # A Google-only account is allowed through: the link lets it *set* a
+        # first password, so losing access to Google is not a dead end. The
+        # empty string stands in for "no current hash" in the fingerprint.
         self.email.send_password_reset_email(
             to=user.email,
-            token=create_password_reset_token(str(user.id), user.hashed_password),
+            token=create_password_reset_token(str(user.id), user.hashed_password or ""),
         )
         logger.info("auth.password_reset_requested", user_id=str(user.id))
 
@@ -176,7 +281,7 @@ class AuthService:
             raise InvalidTokenError()
 
         # The fingerprint stops a reset link from working twice.
-        if payload.get("fp") != password_reset_fingerprint(user.hashed_password):
+        if payload.get("fp") != password_reset_fingerprint(user.hashed_password or ""):
             raise InvalidTokenError("This link has already been used.")
 
         self.users.update(user, hashed_password=hash_password(new_password))
@@ -184,6 +289,11 @@ class AuthService:
         return user
 
     def change_password(self, user: User, *, current: str, new: str) -> None:
+        if not user.has_password:
+            raise ValidationError(
+                "This account signs in with Google. Use the password reset "
+                "link to set a password first."
+            )
         if not verify_password(current, user.hashed_password):
             raise AuthenticationError("Your current password is incorrect.")
         if current == new:
