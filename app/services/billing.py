@@ -1,7 +1,6 @@
 """Plans, wallets and credit accounting."""
 
 import uuid
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -10,8 +9,8 @@ from app.core.logging import get_logger
 from app.models.plan import Plan, PlanTier
 from app.models.wallet import Wallet
 from app.repositories.plan import PlanRepository
-from app.repositories.wallet import WalletRepository
 from app.repositories.usage import UsageRepository
+from app.repositories.wallet import WalletRepository
 
 logger = get_logger(__name__)
 
@@ -59,6 +58,11 @@ class BillingService:
             raise ValidationError(
                 "The requested plan is arranged with our sales team.",
                 code="contact_sales_required",
+            )
+        if plan.slug == PlanTier.FREE:
+            raise ValidationError(
+                "The free trial can only be claimed once upon registration.",
+                code="free_trial_already_claimed",
             )
 
         new_balance = wallet.credits_balance + (plan.credits_awarded or 0)
