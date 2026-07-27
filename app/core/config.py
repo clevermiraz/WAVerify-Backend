@@ -62,15 +62,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_ENABLED: bool = True
 
-    # --- Email -----------------------------------------------------------
-    # `console` writes the message to the structured log, which is all the
-    # MVP needs. A real SMTP/provider backend can be added alongside it.
-    EMAIL_BACKEND: Literal["console", "smtp"] = "console"
+    RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "no-reply@waverify.app"
-    SMTP_HOST: str | None = None
-    SMTP_PORT: int = 587
-    SMTP_USER: str | None = None
-    SMTP_PASSWORD: str | None = None
 
 
 

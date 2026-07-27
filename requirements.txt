@@ -36,6 +36,7 @@ python-magic==0.4.27
 python-multipart==0.0.20
 PyYAML==6.0.3
 redis==5.2.1
+resend==2.35.0
 requests==2.34.2
 rsa==4.9.1
 segno==1.6.6

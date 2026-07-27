@@ -50,6 +50,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
       LOG_JSON: ${LOG_JSON:-true}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@waverify.app}
 
     ports:
       - "${BACKEND_PORT:-8000}:8000"

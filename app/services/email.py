@@ -1,17 +1,14 @@
-"""Transactional email delivery.
+"""Transactional email delivery using Resend."""
 
-The MVP ships a console backend that writes the rendered message to the
-structured log — enough to complete every auth flow locally — plus an SMTP
-backend for real deployments.
-"""
-
-import smtplib
-from email.message import EmailMessage
+import resend
 
 from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Initialize resend with the API key
+resend.api_key = settings.RESEND_API_KEY
 
 
 class EmailService:
@@ -41,29 +38,21 @@ class EmailService:
         )
 
     def _send(self, *, to: str, subject: str, body: str) -> None:
-        if settings.EMAIL_BACKEND == "smtp":
-            self._send_smtp(to=to, subject=subject, body=body)
-        else:
+        if not settings.RESEND_API_KEY:
+            # Fallback for local development if no key is set
             logger.info("email.sent", backend="console", to=to, subject=subject, body=body)
-
-    def _send_smtp(self, *, to: str, subject: str, body: str) -> None:
-        message = EmailMessage()
-        message["From"] = settings.EMAIL_FROM
-        message["To"] = to
-        message["Subject"] = subject
-        message.set_content(body)
+            return
 
         try:
-            host = settings.SMTP_HOST or ""
-            with smtplib.SMTP(host, settings.SMTP_PORT, timeout=10) as smtp:
-                smtp.starttls()
-                if settings.SMTP_USER and settings.SMTP_PASSWORD:
-                    smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                smtp.send_message(message)
-        except (smtplib.SMTPException, OSError) as exc:
+            params: resend.Emails.SendParams = {
+                "from": settings.EMAIL_FROM,
+                "to": [to],
+                "subject": subject,
+                "text": body,
+            }
+            resend.Emails.send(params)
+            logger.info("email.sent", backend="resend", to=to, subject=subject)
+        except Exception as exc:
             # Never fail the caller's request because delivery failed —
             # registration and password reset both stay usable via resend.
             logger.error("email.delivery_failed", to=to, subject=subject, error=str(exc))
-            return
-
-        logger.info("email.sent", backend="smtp", to=to, subject=subject)

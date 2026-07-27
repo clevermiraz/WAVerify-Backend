@@ -29,10 +29,22 @@ class ApiKeyService:
         clean_name = name.strip()
         if not clean_name:
             raise ValidationError("Give the key a name.")
-        if self.repo.count_active_for_user(user_id) >= MAX_KEYS_PER_USER:
+        from app.repositories.wallet import WalletRepository
+        wallet = WalletRepository(self.session).get_for_user(user_id)
+        plan_slug = wallet.plan.slug if wallet and wallet.plan else "free"
+        
+        plan_limits = {
+            "free": 1,
+            "starter": 3,
+            "growth": 5,
+            "pro": 100,
+        }
+        max_keys = plan_limits.get(plan_slug, 1)
+
+        if self.repo.count_active_for_user(user_id) >= max_keys:
             raise ValidationError(
-                f"You can have at most {MAX_KEYS_PER_USER} active API keys. "
-                "Delete one to create another."
+                f"Your current plan allows up to {max_keys} active API key(s). "
+                "Delete one to create another, or upgrade your plan."
             )
         if self.repo.name_taken(user_id, clean_name):
             raise ConflictError("You already have a key with this name.")
