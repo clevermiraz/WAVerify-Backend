@@ -72,9 +72,7 @@ class Settings(BaseSettings):
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
 
-    # --- Bootstrap admin --------------------------------------------------
-    FIRST_ADMIN_EMAIL: str | None = None
-    FIRST_ADMIN_PASSWORD: str | None = None
+
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

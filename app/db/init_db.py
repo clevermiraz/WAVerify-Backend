@@ -5,18 +5,12 @@ application depends on (a user cannot exist without one), so they are seeded
 here rather than in a migration.
 """
 
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.security import hash_password
 from app.models.plan import PlanTier
-from app.models.user import UserRole
 from app.repositories.plan import PlanRepository
-from app.repositories.user import UserRepository
-from app.services.billing import BillingService
 
 logger = get_logger(__name__)
 
@@ -97,30 +91,8 @@ def seed_plans(session: Session) -> None:
             repo.update(existing, **{k: v for k, v in data.items() if k != "slug"})
 
 
-def seed_admin(session: Session) -> None:
-    if not (settings.FIRST_ADMIN_EMAIL and settings.FIRST_ADMIN_PASSWORD):
-        return
-
-    users = UserRepository(session)
-    email = settings.FIRST_ADMIN_EMAIL.strip().lower()
-    if users.get_by_email(email) is not None:
-        return
-
-    admin = users.create(
-        email=email,
-        hashed_password=hash_password(settings.FIRST_ADMIN_PASSWORD),
-        full_name="Administrator",
-        role=UserRole.ADMIN,
-        is_email_verified=True,
-        email_verified_at=datetime.now(UTC),
-    )
-    BillingService(session).create_default_wallet(admin.id)
-    logger.info("seed.admin_created", email=email)
-
-
 def init_db(session: Session) -> None:
     seed_plans(session)
-    seed_admin(session)
     session.commit()
 
 

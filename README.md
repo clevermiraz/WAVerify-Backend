@@ -102,6 +102,18 @@ file.
 
 ---
 
+## Creating an Admin User
+
+To access the admin dashboard, you need to create an administrator account. You can generate one from the command line using this script:
+
+```bash
+PYTHONPATH=. venv/bin/python scripts/create_admin.py your-email@example.com your_secure_password
+```
+
+This will initialize the admin user and their wallet. You can then log into the frontend using these credentials.
+
+---
+
 ## Turning on "Sign in with Google"
 
 This is optional. If you skip it, people can still sign up with an email
@@ -196,7 +208,6 @@ Open `.env` and check these:
 | `SECRET_KEY` | Must be long and random. Anyone who knows it can create valid login tokens. |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `true`, so unconfirmed sign-ups cannot use your quota. |
 | `CORS_ORIGINS` | List only your own website addresses, separated by commas. |
-| `FIRST_ADMIN_PASSWORD` | Change it. The example value is public. |
 | `EMAIL_BACKEND` | Set to `smtp` and fill in the SMTP settings, or no email is ever sent. |
 
 ---
