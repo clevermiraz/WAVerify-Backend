@@ -160,5 +160,5 @@ class AdminService:
             verification_cache_ttl_seconds=settings.VERIFICATION_CACHE_TTL_SECONDS,
             rate_limit_enabled=settings.RATE_LIMIT_ENABLED,
             rate_limit_per_minute=settings.RATE_LIMIT_PER_MINUTE,
-            email_backend=settings.EMAIL_BACKEND,
+            email_backend="resend" if settings.RESEND_API_KEY else "console",
         )

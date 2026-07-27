@@ -208,7 +208,7 @@ Open `.env` and check these:
 | `SECRET_KEY` | Must be long and random. Anyone who knows it can create valid login tokens. |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `true`, so unconfirmed sign-ups cannot use your quota. |
 | `CORS_ORIGINS` | List only your own website addresses, separated by commas. |
-| `EMAIL_BACKEND` | Set to `smtp` and fill in the SMTP settings, or no email is ever sent. |
+| `RESEND_API_KEY` | Set your Resend API key for transactional emails, otherwise emails will just log to the console. |
 
 ---
 
