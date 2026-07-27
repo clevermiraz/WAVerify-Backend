@@ -32,6 +32,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     full_name: Mapped[str | None] = mapped_column(String(150))
     company: Mapped[str | None] = mapped_column(String(150))
+    profile_image_url: Mapped[str | None] = mapped_column(
+        String(1024), nullable=True)
 
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role", native_enum=False, length=20),

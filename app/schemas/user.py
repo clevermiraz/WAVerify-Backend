@@ -12,6 +12,7 @@ class UserRead(ORMModel):
     email: EmailStr
     full_name: str | None
     company: str | None
+    profile_image_url: str | None
     role: UserRole
     is_active: bool
     is_email_verified: bool
@@ -27,6 +28,7 @@ class UserRead(ORMModel):
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=150)
     company: str | None = Field(default=None, max_length=150)
+    profile_image_url: str | None = Field(default=None, max_length=1024)
 
 
 class DeleteAccountRequest(BaseModel):

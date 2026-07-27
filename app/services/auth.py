@@ -155,6 +155,7 @@ class AuthService:
         google_sub = claims["sub"]
         email = claims["email"].strip().lower()
         full_name = (claims.get("name") or "").strip() or None
+        profile_image_url = (claims.get("picture") or "").strip() or None
 
         user = self.users.get_by_google_sub(google_sub)
         created = False
@@ -163,7 +164,10 @@ class AuthService:
             existing = self.users.get_by_email(email)
             if existing is None:
                 user = self._create_google_user(
-                    email=email, google_sub=google_sub, full_name=full_name
+                    email=email,
+                    google_sub=google_sub,
+                    full_name=full_name,
+                    profile_image_url=profile_image_url,
                 )
                 created = True
             elif existing.google_sub is None:
@@ -187,7 +191,11 @@ class AuthService:
         if not user.is_active:
             raise AuthenticationError("This account has been deactivated.")
 
-        self.users.update(user, last_login_at=datetime.now(UTC))
+        update_kwargs = {"last_login_at": datetime.now(UTC)}
+        if profile_image_url and not user.profile_image_url:
+            update_kwargs["profile_image_url"] = profile_image_url
+
+        user = self.users.update(user, **update_kwargs)
         logger.info("auth.google_login", user_id=str(user.id), created=created)
         return user, created
 
@@ -220,7 +228,12 @@ class AuthService:
         return claims
 
     def _create_google_user(
-        self, *, email: str, google_sub: str, full_name: str | None
+        self,
+        *,
+        email: str,
+        google_sub: str,
+        full_name: str | None,
+        profile_image_url: str | None = None,
     ) -> User:
         now = datetime.now(UTC)
         user = self.users.create(
@@ -228,6 +241,7 @@ class AuthService:
             hashed_password=None,  # No local password; Google is the factor.
             google_sub=google_sub,
             full_name=full_name,
+            profile_image_url=profile_image_url,
             is_email_verified=True,
             email_verified_at=now,
         )

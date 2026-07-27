@@ -12,6 +12,7 @@ class AdminUserRead(ORMModel):
     email: EmailStr
     full_name: str | None
     company: str | None
+    profile_image_url: str | None
     role: UserRole
     is_active: bool
     is_email_verified: bool
