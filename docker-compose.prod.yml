@@ -1,0 +1,30 @@
+name: waverify-prod
+
+services:
+  backend:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://waverify.app}
+      FRONTEND_URL: ${FRONTEND_URL:-https://waverify.app}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-true}
+      LOG_JSON: ${LOG_JSON:-true}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@waverify.app}
+    
+    env_file:
+      - .env
+
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+    volumes:
+      - wa_session_data:/app/data
+
+volumes:
+  wa_session_data:
