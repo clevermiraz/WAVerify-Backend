@@ -1,9 +1,7 @@
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.subscription import SubscriptionStatus
 from app.schemas.common import ORMModel
 
 
@@ -14,7 +12,7 @@ class PlanRead(ORMModel):
     description: str
     price_cents: int
     currency: str
-    monthly_request_quota: int | None
+    credits_awarded: int | None
     rate_limit_per_minute: int
     features: list[str]
     is_public: bool
@@ -24,21 +22,17 @@ class PlanRead(ORMModel):
     sort_order: int
 
 
-class SubscriptionRead(ORMModel):
+class WalletRead(ORMModel):
     id: uuid.UUID
-    status: SubscriptionStatus
-    current_period_start: datetime
-    current_period_end: datetime
-    canceled_at: datetime | None
+    credits_balance: int
     plan: PlanRead
 
 
-class ChangePlanRequest(BaseModel):
+class TopUpRequest(BaseModel):
     plan_slug: str
 
 
 class BillingOverview(BaseModel):
-    subscription: SubscriptionRead
-    requests_used: int
+    wallet: WalletRead
+    requests_used_today: int
     requests_remaining: int | None
-    quota: int | None

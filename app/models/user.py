@@ -10,7 +10,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.api_key import ApiKey
     from app.models.search_log import SearchLog
-    from app.models.subscription import Subscription
+    from app.models.wallet import Wallet
 
 
 class UserRole(StrEnum):
@@ -43,7 +43,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    subscription: Mapped["Subscription | None"] = relationship(
+    wallet: Mapped["Wallet | None"] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,

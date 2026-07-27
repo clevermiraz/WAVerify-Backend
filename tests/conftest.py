@@ -86,7 +86,7 @@ def _clean_tables(_schema: None) -> Iterator[None]:
         db.execute(
             text(
                 "TRUNCATE users, api_keys, search_logs, usage_statistics, "
-                "subscriptions RESTART IDENTITY CASCADE"
+                "wallets RESTART IDENTITY CASCADE"
             )
         )
         db.commit()

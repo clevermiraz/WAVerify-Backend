@@ -30,8 +30,8 @@ def enforce_rate_limit(
     if not settings.RATE_LIMIT_ENABLED:
         return principal
 
-    subscription = BillingService(session).get_subscription(principal.user.id)
-    limit = subscription.plan.rate_limit_per_minute or settings.RATE_LIMIT_PER_MINUTE
+    wallet = BillingService(session).get_wallet(principal.user.id)
+    limit = wallet.plan.rate_limit_per_minute or settings.RATE_LIMIT_PER_MINUTE
 
     window = int(time.time() // 60)
     key = f"{_PREFIX}{principal.rate_limit_key}:{window}"
@@ -50,7 +50,7 @@ def enforce_rate_limit(
     if int(count) > limit:
         raise RateLimitError(
             f"Rate limit of {limit} requests per minute exceeded on the "
-            f"{subscription.plan.name} plan."
+            f"{wallet.plan.name} plan."
         )
     return principal
 

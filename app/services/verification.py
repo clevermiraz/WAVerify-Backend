@@ -111,12 +111,11 @@ class VerificationService:
     # --- Quota -----------------------------------------------------------
 
     def _assert_within_quota(self, user: User) -> None:
-        subscription = self.billing.get_subscription(user.id)
-        remaining = self.billing.remaining_quota(user.id, subscription)
+        wallet = self.billing.get_wallet(user.id)
+        remaining = self.billing.remaining_quota(user.id, wallet)
         if remaining is not None and remaining <= 0:
             raise QuotaExceededError(
-                f"You have used all {subscription.plan.monthly_request_quota} requests "
-                f"included in the {subscription.plan.name} plan this period."
+                f"You have run out of credits. Please top-up your wallet to continue."
             )
 
     # --- Cache -----------------------------------------------------------
@@ -193,6 +192,7 @@ class VerificationService:
             succeeded=True,
             response_time_ms=elapsed_ms,
         )
+        self.billing.deduct_quota(user.id)
         return log
 
     def _persist_failure(
@@ -221,6 +221,7 @@ class VerificationService:
             succeeded=False,
             response_time_ms=elapsed_ms,
         )
+        self.billing.deduct_quota(user.id)
         # The provider failed, not the caller — commit the audit trail before
         # the exception handler unwinds the request.
         self.session.commit()

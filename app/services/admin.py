@@ -11,13 +11,13 @@ from app.core.logging import get_logger
 from app.models.user import User, UserRole
 from app.repositories.api_key import ApiKeyRepository
 from app.repositories.search_log import SearchLogRepository
-from app.repositories.subscription import SubscriptionRepository
+from app.repositories.wallet import WalletRepository
 from app.repositories.user import UserRepository
 from app.schemas.admin import (
     AdminApiKeyRead,
     AdminSearchLogRead,
     AdminStats,
-    AdminSubscriptionRead,
+    AdminWalletRead,
     AdminUserRead,
     SystemSettings,
 )
@@ -32,7 +32,7 @@ class AdminService:
         self.users = UserRepository(session)
         self.api_keys = ApiKeyRepository(session)
         self.logs = SearchLogRepository(session)
-        self.subscriptions = SubscriptionRepository(session)
+        self.wallets = WalletRepository(session)
 
     def stats(self) -> AdminStats:
         midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -95,21 +95,20 @@ class AdminService:
             logger.info("admin.user_updated", actor_id=str(actor.id), user_id=str(user_id))
         return AdminUserRead.model_validate(user)
 
-    def list_subscriptions(
+    def list_wallets(
         self, *, page: int, page_size: int
-    ) -> Page[AdminSubscriptionRead]:
-        rows, total = self.subscriptions.paginate(
+    ) -> Page[AdminWalletRead]:
+        rows, total = self.wallets.paginate(
             limit=page_size, offset=(page - 1) * page_size
         )
         return Page.create(
             items=[
-                AdminSubscriptionRead(
+                AdminWalletRead(
                     id=row.id,
                     user_id=row.user_id,
                     user_email=row.user.email,
                     plan_name=row.plan.name,
-                    status=row.status.value,
-                    current_period_end=row.current_period_end,
+                    credits_balance=row.credits_balance,
                 )
                 for row in rows
             ],

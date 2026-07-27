@@ -8,14 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
-    from app.models.subscription import Subscription
+    from app.models.wallet import Wallet
 
 
 class PlanTier(StrEnum):
     FREE = "free"
     STARTER = "starter"
+    GROWTH = "growth"
     PRO = "pro"
-    ENTERPRISE = "enterprise"
 
 
 class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -33,7 +33,7 @@ class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
 
     # `None` means "unmetered" and is used by the Enterprise tier.
-    monthly_request_quota: Mapped[int | None] = mapped_column(Integer)
+    credits_awarded: Mapped[int | None] = mapped_column(Integer)
     rate_limit_per_minute: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
 
     features: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
@@ -45,7 +45,7 @@ class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="plan")
+    wallets: Mapped[list["Wallet"]] = relationship(back_populates="plan")
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Plan {self.slug}>"

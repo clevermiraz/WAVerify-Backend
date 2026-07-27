@@ -27,9 +27,9 @@ class UsageService:
     def overview(self, user: User, *, days: int = DEFAULT_WINDOW_DAYS) -> UsageOverview:
         today = datetime.now(UTC).date()
         window_start = today - timedelta(days=days - 1)
-        subscription = self.billing.get_subscription(user.id)
+        wallet = self.billing.get_wallet(user.id)
 
-        summary = self._summary(user.id, today, subscription)
+        summary = self._summary(user.id, today, wallet)
         daily = self._daily_series(user.id, window_start, today)
         recent = [
             SearchLogRead.model_validate(log)
@@ -38,51 +38,48 @@ class UsageService:
         return UsageOverview(summary=summary, daily=daily, recent=recent)
 
     def dashboard_stats(self, user: User) -> DashboardStats:
-        subscription = self.billing.get_subscription(user.id)
-        period_start = subscription.current_period_start.date()
-        period_end = subscription.current_period_end.date()
+        wallet = self.billing.get_wallet(user.id)
+        today = datetime.now(UTC).date()
+        window_start = today - timedelta(days=30) # Last 30 days
 
         month_total, month_success, month_time = self.usage.totals_for_range(
-            user.id, period_start, period_end
+            user.id, window_start, today
         )
         total_searches = self.logs.count_since(
             datetime.fromtimestamp(0, tz=UTC), user_id=user.id
         )
-        quota = subscription.plan.monthly_request_quota
-
+        
         return DashboardStats(
             total_searches=total_searches,
             numbers_on_whatsapp=self.logs.count_existing_for_user(user.id),
             success_rate=_rate(month_success, month_total),
             average_response_time_ms=_mean(month_time, month_total),
             month_requests=month_total,
-            quota=quota,
-            remaining_credits=None if quota is None else max(0, quota - month_total),
+            quota=None,
+            remaining_credits=wallet.credits_balance,
             active_api_keys=self.api_keys.count_active_for_user(user.id),
-            plan_name=subscription.plan.name,
+            plan_name=wallet.plan.name,
         )
 
     # --- Internals -------------------------------------------------------
 
-    def _summary(self, user_id: uuid.UUID, today: date, subscription) -> UsageSummary:
-        period_start = subscription.current_period_start.date()
-        period_end = subscription.current_period_end.date()
+    def _summary(self, user_id: uuid.UUID, today: date, wallet) -> UsageSummary:
+        window_start = today - timedelta(days=30)
 
         today_stat = self.usage.get_for_day(user_id, today)
         month_total, month_success, month_time = self.usage.totals_for_range(
-            user_id, period_start, period_end
+            user_id, window_start, today
         )
-        quota = subscription.plan.monthly_request_quota
 
         return UsageSummary(
             today_requests=today_stat.total_requests if today_stat else 0,
             month_requests=month_total,
-            quota=quota,
-            remaining_credits=None if quota is None else max(0, quota - month_total),
+            quota=None,
+            remaining_credits=wallet.credits_balance,
             success_rate=_rate(month_success, month_total),
             average_response_time_ms=_mean(month_time, month_total),
-            period_start=period_start,
-            period_end=period_end,
+            period_start=window_start,
+            period_end=today,
         )
 
     def _daily_series(

@@ -17,7 +17,7 @@ from app.schemas.admin import (
     AdminPlanUpdate,
     AdminSearchLogRead,
     AdminStats,
-    AdminSubscriptionRead,
+    AdminWalletRead,
     AdminUserRead,
     AdminUserUpdate,
     SystemSettings,
@@ -58,11 +58,11 @@ def update_user(
     )
 
 
-@router.get("/subscriptions", response_model=Page[AdminSubscriptionRead])
-def list_subscriptions(
+@router.get("/wallets", response_model=Page[AdminWalletRead])
+def list_wallets(
     _: AdminUserDep, service: AdminServiceDep, pagination: PaginationDep
-) -> Page[AdminSubscriptionRead]:
-    return service.list_subscriptions(
+) -> Page[AdminWalletRead]:
+    return service.list_wallets(
         page=pagination.page, page_size=pagination.page_size
     )
 
@@ -264,5 +264,5 @@ def delete_plan(plan_id: uuid.UUID, _: AdminUserDep, db: Session = Depends(get_s
         from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete plan. There may be active subscriptions tied to it."
+            detail="Cannot delete plan. There may be active wallets tied to it."
         ) from err

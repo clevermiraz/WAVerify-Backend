@@ -75,7 +75,7 @@ class AuthService:
             full_name=full_name.strip() if full_name else None,
             company=company.strip() if company else None,
         )
-        self.billing.create_default_subscription(user.id)
+        self.billing.create_default_wallet(user.id)
 
         self.email.send_verification_email(
             to=user.email, token=create_email_verification_token(str(user.id))
@@ -231,7 +231,7 @@ class AuthService:
             is_email_verified=True,
             email_verified_at=now,
         )
-        self.billing.create_default_subscription(user.id)
+        self.billing.create_default_wallet(user.id)
         logger.info("auth.google_registered", user_id=str(user.id))
         return user
 

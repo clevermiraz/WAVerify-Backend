@@ -35,13 +35,12 @@ class AdminApiKeyRead(ORMModel):
     last_used_at: datetime | None
 
 
-class AdminSubscriptionRead(BaseModel):
+class AdminWalletRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     user_email: EmailStr
     plan_name: str
-    status: str
-    current_period_end: datetime
+    credits_balance: int
 
 
 class AdminSearchLogRead(ORMModel):
@@ -81,7 +80,7 @@ class AdminPlanCreate(BaseModel):
     description: str = ""
     price_cents: int = 0
     currency: str = "USD"
-    monthly_request_quota: int | None = None
+    credits_awarded: int | None = None
     rate_limit_per_minute: int = 60
     features: list[str] = []
     is_public: bool = True
@@ -96,7 +95,7 @@ class AdminPlanUpdate(BaseModel):
     description: str | None = None
     price_cents: int | None = None
     currency: str | None = None
-    monthly_request_quota: int | None = None
+    credits_awarded: int | None = None
     rate_limit_per_minute: int | None = None
     features: list[str] | None = None
     is_public: bool | None = None
