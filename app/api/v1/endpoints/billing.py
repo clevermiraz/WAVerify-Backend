@@ -20,6 +20,7 @@ from app.schemas.billing import (
     InvoiceResponse,
     PaymentRead,
     PlanRead,
+    PortalResponse,
     WalletRead,
 )
 
@@ -52,6 +53,15 @@ def list_payments(user: CurrentUserDep, billing: BillingServiceDep) -> list[Paym
     """Purchase history for the signed-in user."""
     rows, _ = billing.payments.list_for_user(user.id)
     return [PaymentRead.model_validate(row) for row in rows]
+
+
+@router.post("/billing/portal", response_model=PortalResponse)
+def create_portal_session(
+    user: CurrentUserDep, polar: PolarServiceDep
+) -> PortalResponse:
+    """Open Polar's customer portal, where the buyer manages their own
+    invoices and billing details. 404s until they have bought something."""
+    return PortalResponse(portal_url=polar.customer_portal_url(user))
 
 
 @router.get("/billing/payments/{payment_id}/invoice", response_model=InvoiceResponse)

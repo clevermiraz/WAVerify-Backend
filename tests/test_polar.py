@@ -14,9 +14,11 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 from standardwebhooks.webhooks import Webhook
 
 from app.core.config import settings
+from app.repositories.wallet import WalletRepository
 
 API = "/api/v1"
 WEBHOOK = f"{API}/billing/polar/webhook"
@@ -141,9 +143,16 @@ def sign(body: bytes, *, secret: str = SECRET, msg_id: str = "msg_1") -> dict[st
     }
 
 
-def deliver(client: TestClient, order: dict, *, secret: str = SECRET, msg_id: str = "msg_1"):
+def deliver(
+    client: TestClient,
+    order: dict,
+    *,
+    secret: str = SECRET,
+    msg_id: str = "msg_1",
+    event: str = "order.paid",
+):
     body = json.dumps(
-        {"type": "order.paid", "timestamp": "2026-07-28T10:00:00Z", "data": order}
+        {"type": event, "timestamp": "2026-07-28T10:00:00Z", "data": order}
     ).encode()
     return client.post(
         WEBHOOK, content=body, headers=sign(body, secret=secret, msg_id=msg_id)
@@ -278,6 +287,80 @@ class TestFulfilment:
         order = build_order(user_id=str(uuid.uuid4()))
 
         response = deliver(client, order)
+
+        assert response.status_code == 202
+        assert balance(client, registered) == FREE_CREDITS
+
+
+class TestRefunds:
+    """Backs the published policy: the credits left over from a refunded
+    purchase are removed, and a balance can never be driven negative."""
+
+    def test_refund_removes_the_unused_credits(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        order = build_order(user_id=registered["user"]["id"])
+        deliver(client, order)
+        assert balance(client, registered) == FREE_CREDITS + STARTER_CREDITS
+
+        deliver(client, order, msg_id="msg_refund", event="order.refunded")
+
+        # The pack's credits go; the free-trial allowance is untouched.
+        assert balance(client, registered) == FREE_CREDITS
+
+    def test_refund_does_not_drive_the_balance_negative(
+        self, client: TestClient, registered: dict, session: Session
+    ) -> None:
+        """Someone who spent most of the pack still lands on zero, not below —
+        a negative balance would lock them out of the free tier too."""
+        order = build_order(user_id=registered["user"]["id"])
+        deliver(client, order)
+
+        wallet = WalletRepository(session).get_for_user(
+            uuid.UUID(registered["user"]["id"])
+        )
+        wallet.credits_balance = 300  # nearly all of it spent
+        session.flush()
+
+        deliver(client, order, msg_id="msg_refund", event="order.refunded")
+
+        assert balance(client, registered) == 0
+
+    def test_refund_is_idempotent(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        order = build_order(user_id=registered["user"]["id"])
+        deliver(client, order)
+        deliver(client, order, msg_id="msg_refund", event="order.refunded")
+        after_first = balance(client, registered)
+
+        deliver(client, order, msg_id="msg_refund_2", event="order.refunded")
+
+        assert balance(client, registered) == after_first
+
+    def test_refund_is_recorded_on_the_purchase(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        order = build_order(user_id=registered["user"]["id"])
+        deliver(client, order)
+        deliver(client, order, msg_id="msg_refund", event="order.refunded")
+
+        payments = client.get(
+            f"{API}/billing/payments", headers=registered["headers"]
+        ).json()
+        assert len(payments) == 1
+        assert payments[0]["status"] == "refunded"
+
+    def test_refund_for_an_unknown_order_is_acknowledged(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        """A refund for something we never recorded must not 500 — Polar would
+        retry it ten times and then disable the endpoint."""
+        order = build_order(user_id=registered["user"]["id"], order_id="ord_never_seen")
+
+        response = deliver(
+            client, order, msg_id="msg_refund", event="order.refunded"
+        )
 
         assert response.status_code == 202
         assert balance(client, registered) == FREE_CREDITS

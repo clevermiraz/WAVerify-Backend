@@ -30,6 +30,12 @@ class BillingUnavailableError(AppError):
     message = "Payments are temporarily unavailable. Please try again shortly."
 
 
+class NoBillingHistoryError(AppError):
+    status_code = 404
+    code = "no_billing_history"
+    message = "There is nothing to manage yet — this account has no purchases."
+
+
 # Product IDs never change once created, so the slug -> id mapping is cached
 # process-wide rather than re-fetched on every checkout. Guarded by a lock
 # because uvicorn runs sync endpoints in a thread pool.
@@ -89,6 +95,35 @@ class PolarService:
         with _cache_lock:
             _product_cache[plan.slug] = product_id
         return product_id
+
+    # --- Customer portal --------------------------------------------------
+
+    def customer_portal_url(self, user: User) -> str:
+        """A signed, short-lived link into Polar's customer portal.
+
+        The portal is where a buyer manages their own billing identity —
+        invoices, receipts, and adding a company name or VAT number to an
+        invoice — without any of it going through our support inbox.
+
+        Resolved by `external_customer_id`, which is set on every checkout, so
+        it only exists once the user has bought something at least once.
+        """
+        try:
+            session = self.client.customer_sessions.create(
+                request={"external_customer_id": str(user.id)}
+            )
+        except Exception as exc:
+            # Overwhelmingly this is "no Polar customer yet", which is a
+            # normal state for anyone still on the free plan rather than a
+            # fault, so it is logged as info and answered as a 404.
+            logger.info(
+                "polar.portal_unavailable",
+                user_id=str(user.id),
+                error_type=type(exc).__name__,
+            )
+            raise NoBillingHistoryError() from exc
+
+        return session.customer_portal_url
 
     # --- Invoices ---------------------------------------------------------
 

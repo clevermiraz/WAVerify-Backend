@@ -48,6 +48,12 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
+class PortalResponse(BaseModel):
+    """Signed, short-lived link into Polar's customer portal."""
+
+    portal_url: str
+
+
 class InvoiceResponse(BaseModel):
     """`url` is null while Polar is still building the PDF."""
 
