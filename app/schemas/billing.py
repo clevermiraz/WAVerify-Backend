@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -36,3 +38,28 @@ class BillingOverview(BaseModel):
     wallet: WalletRead
     requests_used_today: int
     requests_remaining: int | None
+
+
+class CheckoutRequest(BaseModel):
+    plan_slug: str
+
+
+class CheckoutResponse(BaseModel):
+    checkout_url: str
+
+
+class InvoiceResponse(BaseModel):
+    """`url` is null while Polar is still building the PDF."""
+
+    status: Literal["ready", "generating"]
+    url: str | None = None
+
+
+class PaymentRead(ORMModel):
+    id: uuid.UUID
+    status: str
+    amount_cents: int
+    currency: str
+    credits_granted: int
+    created_at: datetime
+    plan: PlanRead | None

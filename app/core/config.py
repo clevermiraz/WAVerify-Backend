@@ -65,7 +65,17 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "no-reply@waverify.app"
 
-
+    # --- Billing (Polar) --------------------------------------------------
+    # Organization Access Token. Sandbox and production tokens are not
+    # interchangeable, so POLAR_SERVER has to agree with whichever one is set.
+    POLAR_ACCESS_TOKEN: str = ""
+    # Signing secret of the webhook endpoint, copied from the Polar dashboard.
+    # Distinct from the access token, and also per-environment.
+    POLAR_WEBHOOK_SECRET: str = ""
+    POLAR_SERVER: Literal["sandbox", "production"] = "sandbox"
+    # Where Polar sends the buyer after paying. `{CHECKOUT_ID}` is substituted
+    # by Polar itself, so it must survive into the URL literally.
+    POLAR_SUCCESS_URL: str = "http://localhost:3000/dashboard/billing?checkout_id={CHECKOUT_ID}"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -82,6 +92,12 @@ class Settings(BaseSettings):
     @property
     def google_login_enabled(self) -> bool:
         return bool(self.GOOGLE_CLIENT_ID)
+
+    @property
+    def polar_enabled(self) -> bool:
+        """Both halves are required: the token creates checkouts, the secret
+        authenticates the callback that actually grants the credits."""
+        return bool(self.POLAR_ACCESS_TOKEN and self.POLAR_WEBHOOK_SECRET)
 
 
 @lru_cache

@@ -6,11 +6,12 @@ imported before the first mapper configuration or resolution fails.
 
 from app.models.api_key import ApiKey
 from app.models.base import Base
+from app.models.payment import Payment, PaymentStatus
 from app.models.plan import Plan, PlanTier
 from app.models.search_log import LookupSource, LookupStatus, SearchLog
-from app.models.wallet import Wallet
 from app.models.usage_statistic import UsageStatistic
 from app.models.user import User, UserRole
+from app.models.wallet import Wallet
 from app.models.whatsapp_account import WhatsAppAccount
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     "Base",
     "LookupSource",
     "LookupStatus",
+    "Payment",
+    "PaymentStatus",
     "Plan",
     "PlanTier",
     "SearchLog",

@@ -14,6 +14,7 @@ from app.services.api_key import ApiKeyService
 from app.services.auth import AuthService
 from app.services.billing import BillingService
 from app.services.history import SearchHistoryService
+from app.services.polar import PolarService
 from app.services.usage import UsageService
 from app.services.user import UserService
 from app.services.verification import VerificationService
@@ -45,6 +46,13 @@ def get_billing_service(session: SessionDep) -> BillingService:
     return BillingService(session)
 
 
+def get_polar_service() -> PolarService:
+    # Raises `BillingUnavailableError` (503) when the deployment has no Polar
+    # credentials, so an unconfigured environment fails at the one endpoint
+    # that needs it rather than at import time.
+    return PolarService()
+
+
 def get_history_service(session: SessionDep) -> SearchHistoryService:
     return SearchHistoryService(session)
 
@@ -59,5 +67,6 @@ ApiKeyServiceDep = Annotated[ApiKeyService, Depends(get_api_key_service)]
 VerificationServiceDep = Annotated[VerificationService, Depends(get_verification_service)]
 UsageServiceDep = Annotated[UsageService, Depends(get_usage_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
+PolarServiceDep = Annotated[PolarService, Depends(get_polar_service)]
 HistoryServiceDep = Annotated[SearchHistoryService, Depends(get_history_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
