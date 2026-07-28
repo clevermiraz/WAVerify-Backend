@@ -10,7 +10,7 @@ import base64
 import json
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -131,7 +131,7 @@ def sign(body: bytes, *, secret: str = SECRET, msg_id: str = "msg_1") -> dict[st
     webhook = Webhook(base64.b64encode(secret.encode()).decode())
     timestamp = int(time.time())
     signature = webhook.sign(
-        msg_id, datetime.fromtimestamp(timestamp, tz=timezone.utc), body.decode()
+        msg_id, datetime.fromtimestamp(timestamp, tz=UTC), body.decode()
     )
     return {
         "webhook-id": msg_id,
