@@ -222,6 +222,22 @@ class SearchLogRead(ORMModel):
     source: LookupSource
     exists_on_whatsapp: bool | None
     display_name: str | None
+    number_info: NumberInfo | None = None
+    gravatar: GravatarProfile | None = None
     response_time_ms: int
     cached: bool
     created_at: datetime
+
+
+class SearchLogDetail(SearchLogRead):
+    """A single past check with everything we stored about it.
+
+    Backs the history detail view — clicking a number shows exactly what that
+    lookup returned. Fields not captured at lookup time (`name_source`,
+    `profile_photo_id`, `device_count`) are live-response only and absent here.
+    """
+
+    about: str | None = None
+    is_business: bool | None = None
+    profile_photo_url: str | None = None
+    error_code: str | None = None

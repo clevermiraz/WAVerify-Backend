@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Index, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,6 +61,13 @@ class SearchLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     about: Mapped[str | None] = mapped_column(String(255))
     is_business: Mapped[bool | None] = mapped_column(Boolean)
     profile_photo_url: Mapped[str | None] = mapped_column(String(2048))
+
+    # Enrichment snapshots stored as-returned, so history shows exactly what the
+    # caller saw. number_info is derived from the phone (always available, even
+    # for failures); gravatar is only set when the caller supplied an email that
+    # had a public profile.
+    number_info: Mapped[dict | None] = mapped_column(JSONB)
+    gravatar: Mapped[dict | None] = mapped_column(JSONB)
 
     response_time_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

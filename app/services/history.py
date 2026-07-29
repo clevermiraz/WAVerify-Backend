@@ -4,9 +4,10 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import NotFoundError
 from app.models.search_log import LookupStatus
 from app.repositories.search_log import SearchLogRepository
-from app.schemas.check import SearchLogRead
+from app.schemas.check import SearchLogDetail, SearchLogRead
 from app.schemas.common import Page
 
 
@@ -36,3 +37,11 @@ class SearchHistoryService:
             page=page,
             page_size=page_size,
         )
+
+    def get_for_user(
+        self, user_id: uuid.UUID, search_id: uuid.UUID
+    ) -> SearchLogDetail:
+        log = self.logs.get_for_user(search_id, user_id)
+        if log is None:
+            raise NotFoundError("That check was not found.")
+        return SearchLogDetail.model_validate(log)

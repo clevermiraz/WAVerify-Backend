@@ -59,6 +59,17 @@ class SearchLogRepository(BaseRepository[SearchLog]):
         )
         return rows, total
 
+    def get_for_user(
+        self, search_id: uuid.UUID, user_id: uuid.UUID
+    ) -> SearchLog | None:
+        """A single log, scoped to its owner so users can't read others' checks."""
+        return self.session.scalar(
+            select(SearchLog).where(
+                SearchLog.id == search_id,
+                SearchLog.user_id == user_id,
+            )
+        )
+
     def recent_for_user(self, user_id: uuid.UUID, limit: int = 5) -> list[SearchLog]:
         stmt = (
             select(SearchLog)

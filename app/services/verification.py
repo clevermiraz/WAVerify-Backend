@@ -54,6 +54,9 @@ class VerificationService:
         phone = parse_phone(raw_phone)
         self._assert_within_quota(user)
 
+        # Derived from the phone alone, so it is valid on every path including
+        # failures. Built once and reused by both persistence and the response.
+        number_info = self._number_info(phone)
         # Email enrichment is independent of the WhatsApp lookup and its cache,
         # so resolve it once up front and attach to whichever path answers.
         gravatar = self.gravatar.lookup(email) if email else None
@@ -72,9 +75,12 @@ class VerificationService:
                 source=source,
                 api_key_id=api_key_id,
                 cached=True,
+                number_info=number_info,
+                gravatar=gravatar,
             )
             return self._to_response(
-                phone, result, elapsed_ms, cached=True, gravatar=gravatar
+                phone, result, elapsed_ms, cached=True,
+                number_info=number_info, gravatar=gravatar,
             )
 
         try:
@@ -88,6 +94,8 @@ class VerificationService:
                 source=source,
                 api_key_id=api_key_id,
                 error_code=exc.code,
+                number_info=number_info,
+                gravatar=gravatar,
             )
             logger.warning(
                 "verification.failed",
@@ -107,6 +115,8 @@ class VerificationService:
             source=source,
             api_key_id=api_key_id,
             cached=False,
+            number_info=number_info,
+            gravatar=gravatar,
         )
         logger.info(
             "verification.completed",
@@ -116,7 +126,8 @@ class VerificationService:
             response_time_ms=elapsed_ms,
         )
         return self._to_response(
-            phone, result, elapsed_ms, cached=False, gravatar=gravatar
+            phone, result, elapsed_ms, cached=False,
+            number_info=number_info, gravatar=gravatar,
         )
 
     # --- Quota -----------------------------------------------------------
@@ -184,6 +195,8 @@ class VerificationService:
         source: LookupSource,
         api_key_id: uuid.UUID | None,
         cached: bool,
+        number_info: NumberInfo | None = None,
+        gravatar: GravatarProfile | None = None,
     ) -> SearchLog:
         log = self.logs.create(
             user_id=user.id,
@@ -197,6 +210,8 @@ class VerificationService:
             about=result.about,
             is_business=result.is_business,
             profile_photo_url=result.profile_photo_url,
+            number_info=number_info.model_dump(mode="json") if number_info else None,
+            gravatar=gravatar.model_dump(mode="json") if gravatar else None,
             response_time_ms=elapsed_ms,
             cached=cached,
         )
@@ -218,6 +233,8 @@ class VerificationService:
         source: LookupSource,
         api_key_id: uuid.UUID | None,
         error_code: str,
+        number_info: NumberInfo | None = None,
+        gravatar: GravatarProfile | None = None,
     ) -> None:
         self.logs.create(
             user_id=user.id,
@@ -226,6 +243,8 @@ class VerificationService:
             country_code=phone.country_code,
             status=LookupStatus.FAILED,
             source=source,
+            number_info=number_info.model_dump(mode="json") if number_info else None,
+            gravatar=gravatar.model_dump(mode="json") if gravatar else None,
             response_time_ms=elapsed_ms,
             error_code=error_code,
         )
@@ -247,12 +266,26 @@ class VerificationService:
         return max(1, round((time.perf_counter() - started) * 1000))
 
     @staticmethod
+    def _number_info(phone: ParsedPhone) -> NumberInfo:
+        return NumberInfo(
+            country_code=phone.country_code,
+            region=phone.region,
+            location=phone.location,
+            carrier=phone.carrier,
+            line_type=phone.line_type,
+            timezones=list(phone.timezones),
+            international_format=phone.international_format,
+            national_format=phone.national_format,
+        )
+
+    @staticmethod
     def _to_response(
         phone: ParsedPhone,
         result: ProviderResult,
         elapsed_ms: int,
         *,
         cached: bool,
+        number_info: NumberInfo | None = None,
         gravatar: GravatarProfile | None = None,
     ) -> CheckResponse:
         return CheckResponse(
@@ -265,16 +298,7 @@ class VerificationService:
             profile_photo=result.profile_photo_url,
             profile_photo_id=result.profile_photo_id,
             device_count=result.device_count,
-            number_info=NumberInfo(
-                country_code=phone.country_code,
-                region=phone.region,
-                location=phone.location,
-                carrier=phone.carrier,
-                line_type=phone.line_type,
-                timezones=list(phone.timezones),
-                international_format=phone.international_format,
-                national_format=phone.national_format,
-            ),
+            number_info=number_info or VerificationService._number_info(phone),
             gravatar=gravatar,
             response_time_ms=elapsed_ms,
             cached=cached,

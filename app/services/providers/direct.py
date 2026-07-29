@@ -11,6 +11,7 @@ from typing import Any
 from neonize.client import NewClient
 from neonize.events import ConnectedEv, LoggedOutEv, PairStatusEv
 
+from app.core.config import settings
 from app.core.exceptions import ProviderError
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
@@ -28,6 +29,13 @@ def normalize(phone: str) -> str:
     return "+" + digits
 
 
+def _jitter(lo: float, hi: float) -> None:
+    """Sleep a random anti-ban delay. A non-positive max disables it."""
+    if hi <= 0:
+        return
+    time.sleep(random.uniform(max(0.0, lo), hi))
+
+
 class DirectWhatsAppClient:
     """Manages a single neonize WhatsApp connection."""
     
@@ -35,9 +43,9 @@ class DirectWhatsAppClient:
         self.account_id = account_id
         os.makedirs("data", exist_ok=True)
         self.session_path = f"data/wa-session-{account_id}.sqlite3"
-        self._enrich = True
         self._lock = threading.Lock()
         
+        self._enrich = settings.PROVIDER_ENRICH_PROFILE
         self.status = "initializing"
         self.qr_data = None
         self.paired_number = None
@@ -108,10 +116,13 @@ class DirectWhatsAppClient:
         number = normalize(phone)
         try:
             with self._lock:
-                # Humanized delay: Random wait between 1 to 3 seconds before checking.
-                # This MUST be inside the lock so concurrent requests wait in a queue 
-                # rather than firing simultaneously after the sleep.
-                time.sleep(random.uniform(1.0, 3.0))
+                # Humanized delay before the lookup. Inside the lock so queued
+                # requests wait their turn instead of firing in a burst. Tune
+                # via PROVIDER_LOOKUP_DELAY_* — smaller is faster, riskier.
+                _jitter(
+                    settings.PROVIDER_LOOKUP_DELAY_MIN,
+                    settings.PROVIDER_LOOKUP_DELAY_MAX,
+                )
                 responses = self._client.is_on_whatsapp(number)
             
             found = {}
@@ -154,8 +165,12 @@ class DirectWhatsAppClient:
 
         try:
             with self._lock:
-                # Add micro-delays (jitter) to simulate human speeds when querying profile data
-                time.sleep(random.uniform(0.5, 1.5))
+                # Small jitter between enrichment calls. Tune via
+                # PROVIDER_ENRICH_DELAY_*.
+                _jitter(
+                    settings.PROVIDER_ENRICH_DELAY_MIN,
+                    settings.PROVIDER_ENRICH_DELAY_MAX,
+                )
                 infos = self._client.get_user_info(target)
             for info in infos:
                 out["about"] = info.UserInfo.Status or None
@@ -181,7 +196,10 @@ class DirectWhatsAppClient:
 
         try:
             with self._lock:
-                time.sleep(random.uniform(0.5, 1.5))
+                _jitter(
+                    settings.PROVIDER_ENRICH_DELAY_MIN,
+                    settings.PROVIDER_ENRICH_DELAY_MAX,
+                )
                 picture = self._client.get_profile_picture(target)
             out["profile_photo"] = picture.URL or None
             if picture.ID:
@@ -195,7 +213,10 @@ class DirectWhatsAppClient:
 
         try:
             with self._lock:
-                time.sleep(random.uniform(0.5, 1.5))
+                _jitter(
+                    settings.PROVIDER_ENRICH_DELAY_MIN,
+                    settings.PROVIDER_ENRICH_DELAY_MAX,
+                )
                 devices = self._client.get_user_devices(target)
             out["device_count"] = len(devices)
         except Exception as exc:

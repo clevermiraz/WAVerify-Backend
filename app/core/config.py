@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     # --- Verification provider -------------------------------------------
     VERIFICATION_CACHE_TTL_SECONDS: int = 300
 
+    # --- Provider pacing (anti-ban jitter) -------------------------------
+    # Random delays inserted before each WhatsApp call so pooled-account
+    # traffic does not look robotic. Lower = faster responses but higher ban
+    # risk. All values are seconds; set a pair equal for a fixed delay, or the
+    # max to 0 to disable that delay entirely.
+    PROVIDER_LOOKUP_DELAY_MIN: float = 0.2
+    PROVIDER_LOOKUP_DELAY_MAX: float = 0.7
+    PROVIDER_ENRICH_DELAY_MIN: float = 0.05
+    PROVIDER_ENRICH_DELAY_MAX: float = 0.25
+    # Fetch about/photo/devices for accounts that exist. Off makes lookups much
+    # faster but returns only existence plus any business name.
+    PROVIDER_ENRICH_PROFILE: bool = True
+
     # --- Gravatar enrichment ---------------------------------------------
     # When a caller passes an email alongside the number, we look it up on
     # Gravatar's public profile API to add a name, avatar, bio and any social

@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -7,7 +8,12 @@ from app.dependencies.common import PaginationDep
 from app.dependencies.rate_limit import RateLimitedPrincipalDep
 from app.dependencies.services import HistoryServiceDep, VerificationServiceDep
 from app.models.search_log import LookupStatus
-from app.schemas.check import CheckRequest, CheckResponse, SearchLogRead
+from app.schemas.check import (
+    CheckRequest,
+    CheckResponse,
+    SearchLogDetail,
+    SearchLogRead,
+)
 from app.schemas.common import Page
 
 router = APIRouter(tags=["Verification"])
@@ -76,3 +82,23 @@ def list_searches(
         status=status,
         query=q,
     )
+
+
+@router.get(
+    "/searches/{search_id}",
+    response_model=SearchLogDetail,
+    tags=["History"],
+    responses={404: {"description": "No such check, or it belongs to another account"}},
+)
+def get_search(
+    search_id: uuid.UUID,
+    user: CurrentUserDep,
+    history: HistoryServiceDep,
+) -> SearchLogDetail:
+    """Get the full detail of one past check.
+
+    Use this for the history detail view — it returns everything that was found
+    for that number at the time: WhatsApp result, number facts and any Gravatar
+    profile. You can only read checks made by the account you are signed in as.
+    """
+    return history.get_for_user(user.id, search_id)
