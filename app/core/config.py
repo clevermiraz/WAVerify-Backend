@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     # --- Verification provider -------------------------------------------
     VERIFICATION_CACHE_TTL_SECONDS: int = 300
 
+    # --- Gravatar enrichment ---------------------------------------------
+    # When a caller passes an email alongside the number, we look it up on
+    # Gravatar's public profile API to add a name, avatar, bio and any social
+    # accounts the person has verified. The API works unauthenticated (100
+    # req/hour); a key raises that to 1000/hour but is never required.
+    GRAVATAR_ENABLED: bool = True
+    GRAVATAR_API_KEY: str = ""
+    GRAVATAR_TIMEOUT_SECONDS: float = 4.0
+    # Profiles change rarely, so results are cached longer than a WhatsApp
+    # lookup. 0 disables the cache.
+    GRAVATAR_CACHE_TTL_SECONDS: int = 3600
+
     # --- Rate limiting ---------------------------------------------------
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_ENABLED: bool = True

@@ -10,7 +10,6 @@ from typing import Any
 
 from neonize.client import NewClient
 from neonize.events import ConnectedEv, LoggedOutEv, PairStatusEv
-from neonize.utils import build_jid
 
 from app.core.exceptions import ProviderError
 from app.core.logging import get_logger
@@ -129,22 +128,29 @@ class DirectWhatsAppClient:
             return {"phone": number, "exists": False, "error": str(exc)}
 
     def _payload(self, phone: str, result: Any) -> dict[str, Any]:
+        verified_name = result.VerifiedName.Details.verifiedName or None
         payload: dict[str, Any] = {
             "phone": phone,
             "exists": True,
             "jid": f"{result.JID.User}@{result.JID.Server}",
-            "business": bool(result.VerifiedName.Details.verifiedName),
-            "display_name": result.VerifiedName.Details.verifiedName or None,
+            "business": bool(verified_name),
+            "display_name": verified_name,
+            "name_source": "business_verified" if verified_name else None,
             "about": None,
             "profile_photo": None,
+            "profile_photo_id": None,
+            "device_count": None,
         }
         if self._enrich:
-            payload.update(self._profile(result.JID))
+            payload.update(self._profile(result.JID, have_name=bool(verified_name)))
         return payload
 
-    def _profile(self, jid: Any) -> dict[str, Any]:
+    def _profile(self, jid: Any, *, have_name: bool) -> dict[str, Any]:
         out: dict[str, Any] = {}
-        target = build_jid(jid.User)
+        # Use the JID whatsmeow handed back verbatim. Rebuilding it as
+        # "<user>@s.whatsapp.net" silently breaks every number that resolves to
+        # a LID, which is what made about/photo come back null for some numbers.
+        target = jid
 
         try:
             with self._lock:
@@ -153,19 +159,77 @@ class DirectWhatsAppClient:
                 infos = self._client.get_user_info(target)
             for info in infos:
                 out["about"] = info.UserInfo.Status or None
+                # get_user_info carries the verified name too, and it is
+                # populated in cases where is_on_whatsapp left it empty.
+                if not have_name:
+                    business_name = info.UserInfo.VerifiedName.Details.verifiedName or None
+                    if business_name:
+                        out["display_name"] = business_name
+                        out["name_source"] = "business_verified"
+                        out["business"] = True
+                        have_name = True
+                if info.UserInfo.PictureID:
+                    out["profile_photo_id"] = info.UserInfo.PictureID
                 break
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "provider.direct_user_info_failed", jid=jid.User, error=str(exc)
+            )
+
+        if not have_name:
+            out.update(self._contact_name(target))
 
         try:
             with self._lock:
                 time.sleep(random.uniform(0.5, 1.5))
                 picture = self._client.get_profile_picture(target)
             out["profile_photo"] = picture.URL or None
-        except Exception:
-            pass
+            if picture.ID:
+                out["profile_photo_id"] = picture.ID
+        except Exception as exc:
+            # A hidden profile photo also lands here, so this is expected noise
+            # as much as a real fault — log it, do not fail the lookup.
+            logger.warning(
+                "provider.direct_profile_photo_failed", jid=jid.User, error=str(exc)
+            )
+
+        try:
+            with self._lock:
+                time.sleep(random.uniform(0.5, 1.5))
+                devices = self._client.get_user_devices(target)
+            out["device_count"] = len(devices)
+        except Exception as exc:
+            logger.warning(
+                "provider.direct_devices_failed", jid=jid.User, error=str(exc)
+            )
 
         return out
+
+    def _contact_name(self, target: Any) -> dict[str, Any]:
+        """Last resort for a personal name.
+
+        Only ever returns something when this paired account already knows the
+        contact — whatsmeow learns a push name from an incoming message or from
+        synced app state, never from a cold lookup.
+        """
+        try:
+            contact = self._client.contact.get_contact(target)
+        except Exception as exc:
+            logger.warning(
+                "provider.direct_contact_failed", jid=target.User, error=str(exc)
+            )
+            return {}
+
+        if not contact.Found:
+            return {}
+        for source, value in (
+            ("business_name", contact.BusinessName),
+            ("contact_name", contact.FullName),
+            ("push_name", contact.PushName),
+        ):
+            if value:
+                return {"display_name": value, "name_source": source}
+        return {}
 
     def close(self) -> None:
         try:  # noqa: SIM105
@@ -272,9 +336,12 @@ class DirectWhatsAppProvider(WhatsAppProvider):
         return ProviderResult(
             exists=True,
             display_name=payload.get("display_name"),
+            name_source=payload.get("name_source"),
             about=payload.get("about"),
             is_business=bool(payload.get("business")),
             profile_photo_url=payload.get("profile_photo"),
+            profile_photo_id=payload.get("profile_photo_id"),
+            device_count=payload.get("device_count"),
         )
 
     def close(self) -> None:

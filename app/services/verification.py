@@ -20,8 +20,9 @@ from app.models.search_log import LookupSource, LookupStatus, SearchLog
 from app.models.user import User
 from app.repositories.search_log import SearchLogRepository
 from app.repositories.usage import UsageRepository
-from app.schemas.check import CheckResponse
+from app.schemas.check import CheckResponse, GravatarProfile, NumberInfo
 from app.services.billing import BillingService
+from app.services.gravatar import GravatarService
 from app.services.providers.base import ProviderResult
 from app.services.providers.registry import get_provider
 from app.utils.phone import ParsedPhone, mask_phone, parse_phone
@@ -38,6 +39,7 @@ class VerificationService:
         self.logs = SearchLogRepository(session)
         self.usage = UsageRepository(session)
         self.billing = BillingService(session)
+        self.gravatar = GravatarService(redis_client)
         self.provider = get_provider()
 
     def check(
@@ -47,9 +49,14 @@ class VerificationService:
         raw_phone: str,
         source: LookupSource = LookupSource.DASHBOARD,
         api_key_id: uuid.UUID | None = None,
+        email: str | None = None,
     ) -> CheckResponse:
         phone = parse_phone(raw_phone)
         self._assert_within_quota(user)
+
+        # Email enrichment is independent of the WhatsApp lookup and its cache,
+        # so resolve it once up front and attach to whichever path answers.
+        gravatar = self.gravatar.lookup(email) if email else None
 
         started = time.perf_counter()
         cached_payload = self._read_cache(phone)
@@ -66,7 +73,9 @@ class VerificationService:
                 api_key_id=api_key_id,
                 cached=True,
             )
-            return self._to_response(phone, result, elapsed_ms, cached=True)
+            return self._to_response(
+                phone, result, elapsed_ms, cached=True, gravatar=gravatar
+            )
 
         try:
             result = self.provider.check(phone)
@@ -106,7 +115,9 @@ class VerificationService:
             exists=result.exists,
             response_time_ms=elapsed_ms,
         )
-        return self._to_response(phone, result, elapsed_ms, cached=False)
+        return self._to_response(
+            phone, result, elapsed_ms, cached=False, gravatar=gravatar
+        )
 
     # --- Quota -----------------------------------------------------------
 
@@ -145,9 +156,12 @@ class VerificationService:
         payload = {
             "exists": result.exists,
             "display_name": result.display_name,
+            "name_source": result.name_source,
             "about": result.about,
             "is_business": result.is_business,
             "profile_photo_url": result.profile_photo_url,
+            "profile_photo_id": result.profile_photo_id,
+            "device_count": result.device_count,
         }
         try:
             self.redis.setex(
@@ -234,15 +248,34 @@ class VerificationService:
 
     @staticmethod
     def _to_response(
-        phone: ParsedPhone, result: ProviderResult, elapsed_ms: int, *, cached: bool
+        phone: ParsedPhone,
+        result: ProviderResult,
+        elapsed_ms: int,
+        *,
+        cached: bool,
+        gravatar: GravatarProfile | None = None,
     ) -> CheckResponse:
         return CheckResponse(
             phone=phone.e164,
             exists=result.exists,
             display_name=result.display_name,
+            name_source=result.name_source,
             about=result.about,
             business=result.is_business,
             profile_photo=result.profile_photo_url,
+            profile_photo_id=result.profile_photo_id,
+            device_count=result.device_count,
+            number_info=NumberInfo(
+                country_code=phone.country_code,
+                region=phone.region,
+                location=phone.location,
+                carrier=phone.carrier,
+                line_type=phone.line_type,
+                timezones=list(phone.timezones),
+                international_format=phone.international_format,
+                national_format=phone.national_format,
+            ),
+            gravatar=gravatar,
             response_time_ms=elapsed_ms,
             cached=cached,
             checked_at=datetime.now(UTC),

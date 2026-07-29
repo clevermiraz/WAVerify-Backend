@@ -16,9 +16,14 @@ from app.utils.phone import ParsedPhone
 class ProviderResult:
     exists: bool
     display_name: str | None = None
+    # Where display_name came from, so callers can tell "hidden by privacy"
+    # apart from "this backend cannot see personal names at all".
+    name_source: str | None = None
     about: str | None = None
     is_business: bool = False
     profile_photo_url: str | None = None
+    profile_photo_id: str | None = None
+    device_count: int | None = None
 
 
 class WhatsAppProvider(ABC):

@@ -48,6 +48,7 @@ def check_number(
         raw_phone=payload.phone,
         source=principal.source,
         api_key_id=principal.api_key_id,
+        email=payload.email,
     )
 
 
