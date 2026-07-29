@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy import make_url
 
 
 class Settings(BaseSettings):
@@ -109,6 +110,30 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        """Accept plain-Postgres and pooler URLs, target the psycopg 3 driver.
+
+        Supabase and similar hosts hand out `postgresql://…?pgbouncer=true`. A
+        bare `postgresql://` leaves SQLAlchemy to guess a DBAPI, and `pgbouncer`
+        is not a libpq option so psycopg rejects it up front. This rewrites both
+        to the driver we install, while leaving any explicit `+driver`
+        (`+psycopg`, `+asyncpg`, …) untouched.
+        """
+        try:
+            url = make_url(value)
+        except Exception:
+            # Not a shape we recognise — let the engine raise the real error.
+            return value
+        if url.drivername in ("postgres", "postgresql"):
+            url = url.set(drivername="postgresql+psycopg")
+        if "pgbouncer" in url.query:
+            url = url.set(
+                query={k: v for k, v in url.query.items() if k != "pgbouncer"}
+            )
+        return url.render_as_string(hide_password=False)
 
     @property
     def is_production(self) -> bool:
