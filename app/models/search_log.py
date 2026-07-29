@@ -64,9 +64,10 @@ class SearchLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # Enrichment snapshots stored as-returned, so history shows exactly what the
     # caller saw. number_info is derived from the phone (always available, even
-    # for failures); gravatar is only set when the caller supplied an email that
-    # had a public profile.
+    # for failures); email_info is set whenever an email was supplied, whether
+    # or not it verified; gravatar only when that email had a public profile.
     number_info: Mapped[dict | None] = mapped_column(JSONB)
+    email_info: Mapped[dict | None] = mapped_column(JSONB)
     gravatar: Mapped[dict | None] = mapped_column(JSONB)
 
     response_time_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -172,7 +172,23 @@ class DirectWhatsAppClient:
                     settings.PROVIDER_ENRICH_DELAY_MAX,
                 )
                 infos = self._client.get_user_info(target)
-            for info in infos:
+
+            info = self._match_user_info(infos, target)
+            if info is None:
+                # whatsmeow keys its reply by the JID the server echoed back and
+                # drops users it could not resolve, so an empty reply is a real
+                # outcome, not an exception. Without this line it is impossible
+                # to tell from the logs apart from "the account hides its about".
+                logger.warning(
+                    "provider.direct_user_info_empty",
+                    jid=jid.User,
+                    returned=len(infos),
+                )
+            else:
+                # Empty Status means WhatsApp withheld the about — either the
+                # account hides it, or this pooled account is not trusted enough
+                # to be shown it. Both land as null; they are not distinguishable
+                # from the client side.
                 out["about"] = info.UserInfo.Status or None
                 # get_user_info carries the verified name too, and it is
                 # populated in cases where is_on_whatsapp left it empty.
@@ -185,7 +201,6 @@ class DirectWhatsAppClient:
                         have_name = True
                 if info.UserInfo.PictureID:
                     out["profile_photo_id"] = info.UserInfo.PictureID
-                break
         except Exception as exc:
             logger.warning(
                 "provider.direct_user_info_failed", jid=jid.User, error=str(exc)
@@ -225,6 +240,25 @@ class DirectWhatsAppClient:
             )
 
         return out
+
+    @staticmethod
+    def _match_user_info(infos: Any, target: Any) -> Any | None:
+        """Pick the entry that answers for `target`, or None if there is none.
+
+        The reply is built from a Go map, so its order is not the request
+        order. Taking the first entry happens to work for a single-JID query
+        but returns another number's about the moment that stops being true —
+        and reads as a hidden about when the query came back empty.
+        """
+        entries = list(infos)
+        if not entries:
+            return None
+        for info in entries:
+            if info.JID.User == target.User:
+                return info
+        # One entry for a one-JID query is the answer even when the server
+        # echoed a different address form back (a PN for a LID, say).
+        return entries[0] if len(entries) == 1 else None
 
     def _contact_name(self, target: Any) -> dict[str, Any]:
         """Last resort for a personal name.

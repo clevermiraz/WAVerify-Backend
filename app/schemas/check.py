@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.models.search_log import LookupSource, LookupStatus
 from app.schemas.common import ORMModel
@@ -18,13 +18,18 @@ class CheckRequest(BaseModel):
         ),
         examples=["+8801712345678"],
     )
-    email: EmailStr | None = Field(
+    email: str | None = Field(
         default=None,
+        max_length=254,
         description=(
-            "Optional. If you also know an email for this person, we look it up "
-            "on Gravatar and add their public profile — name, avatar, bio and any "
-            "social accounts they have verified — under `gravatar` in the reply. "
-            "Leave it out and that field is simply null."
+            "Optional. If you also send an email we verify it and return the "
+            "verdict under `email_info` — whether the address is well-formed, "
+            "whether its domain can actually receive mail, and whether it is a "
+            "throwaway or a shared team address. When the address is well-formed "
+            "we also look it up on Gravatar and add any public profile under "
+            "`gravatar`. Leave it out and both fields are simply null. "
+            "A malformed address is a result, not an error: you get `200` with "
+            "`email_info.syntax_valid: false`, never a `422`."
         ),
         examples=["someone@example.com"],
     )
@@ -62,6 +67,75 @@ class NumberInfo(BaseModel):
     )
     national_format: str | None = Field(
         default=None, description="Human-readable local form."
+    )
+
+
+class EmailInfo(BaseModel):
+    """The verdict on the email you sent.
+
+    Two things are checked without ever contacting the mailbox: the address is
+    written correctly, and its domain publishes somewhere to deliver mail. That
+    is as far as any honest check can go — the only way to prove one specific
+    mailbox exists is to try to send to it, which gets the sender blocklisted,
+    so we do not do it. Read `deliverable` as "this domain accepts mail", not
+    "this person exists".
+    """
+
+    email: str = Field(
+        description="The address you sent, lowercased and cleaned up.",
+        examples=["someone@example.com"],
+    )
+    syntax_valid: bool = Field(
+        description="true if the address is written correctly and could exist."
+    )
+    domain: str | None = Field(
+        default=None,
+        description="The part after the @. null when the address is too broken to split.",
+    )
+    deliverable: bool | None = Field(
+        default=None,
+        description=(
+            "true if the domain publishes a mail server, false if it does not "
+            "or does not exist at all. null means we could not find out — the "
+            "DNS lookup timed out or was turned off, so treat it as unknown "
+            "rather than as a failure."
+        ),
+    )
+    mx_hosts: list[str] = Field(
+        default_factory=list,
+        description="Mail servers for the domain, best first. Empty when there are none.",
+    )
+    disposable: bool = Field(
+        default=False,
+        description=(
+            "true if the domain is a known throwaway-inbox service. These "
+            "addresses receive mail perfectly well but are abandoned in minutes."
+        ),
+    )
+    role_account: bool = Field(
+        default=False,
+        description=(
+            "true for shared or automated mailboxes like `info@`, `support@` or "
+            "`no-reply@` — real, but no single person behind them."
+        ),
+    )
+    free_provider: bool = Field(
+        default=False,
+        description=(
+            "true if the domain is a consumer mailbox provider such as Gmail. "
+            "Normal for a personal address; notable for one claiming to be a company."
+        ),
+    )
+    status: str = Field(
+        description=(
+            "One-word summary: `valid`, `invalid_syntax`, `domain_not_found`, "
+            "`no_mail_server`, `disposable`, or `unknown` when the DNS check "
+            "could not be completed."
+        )
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Plain-English explanation of `status`. null when the address is fine.",
     )
 
 
@@ -151,11 +225,17 @@ class CheckResponse(BaseModel):
     number_info: NumberInfo | None = Field(
         default=None, description="Facts about the number itself. Never requires WhatsApp."
     )
+    email_info: EmailInfo | None = Field(
+        default=None,
+        description=(
+            "The verdict on the `email` you sent. null when you did not send one."
+        ),
+    )
     gravatar: GravatarProfile | None = Field(
         default=None,
         description=(
-            "Public Gravatar profile, only when you passed an `email` and that "
-            "email has a Gravatar account. null otherwise."
+            "Public Gravatar profile, only when you passed a well-formed `email` "
+            "and that email has a Gravatar account. null otherwise."
         ),
     )
     response_time_ms: int = Field(
@@ -193,6 +273,18 @@ class CheckResponse(BaseModel):
                     "international_format": "+880 1712-345678",
                     "national_format": "01712-345678",
                 },
+                "email_info": {
+                    "email": "jane@acme.com",
+                    "syntax_valid": True,
+                    "domain": "acme.com",
+                    "deliverable": True,
+                    "mx_hosts": ["aspmx.l.google.com"],
+                    "disposable": False,
+                    "role_account": False,
+                    "free_provider": False,
+                    "status": "valid",
+                    "reason": None,
+                },
                 "gravatar": {
                     "display_name": "Jane Roe",
                     "about": "Product designer.",
@@ -223,6 +315,7 @@ class SearchLogRead(ORMModel):
     exists_on_whatsapp: bool | None
     display_name: str | None
     number_info: NumberInfo | None = None
+    email_info: EmailInfo | None = None
     gravatar: GravatarProfile | None = None
     response_time_ms: int
     cached: bool

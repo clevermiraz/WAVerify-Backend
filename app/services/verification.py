@@ -20,8 +20,9 @@ from app.models.search_log import LookupSource, LookupStatus, SearchLog
 from app.models.user import User
 from app.repositories.search_log import SearchLogRepository
 from app.repositories.usage import UsageRepository
-from app.schemas.check import CheckResponse, GravatarProfile, NumberInfo
+from app.schemas.check import CheckResponse, EmailInfo, GravatarProfile, NumberInfo
 from app.services.billing import BillingService
+from app.services.email_verify import EmailVerificationService
 from app.services.gravatar import GravatarService
 from app.services.providers.base import ProviderResult
 from app.services.providers.registry import get_provider
@@ -40,6 +41,7 @@ class VerificationService:
         self.usage = UsageRepository(session)
         self.billing = BillingService(session)
         self.gravatar = GravatarService(redis_client)
+        self.email_verify = EmailVerificationService(redis_client)
         self.provider = get_provider()
 
     def check(
@@ -57,9 +59,16 @@ class VerificationService:
         # Derived from the phone alone, so it is valid on every path including
         # failures. Built once and reused by both persistence and the response.
         number_info = self._number_info(phone)
-        # Email enrichment is independent of the WhatsApp lookup and its cache,
-        # so resolve it once up front and attach to whichever path answers.
-        gravatar = self.gravatar.lookup(email) if email else None
+        # Email work is independent of the WhatsApp lookup and its cache, so
+        # resolve it once up front and attach to whichever path answers. The
+        # Gravatar call is skipped for an address that failed syntax — hashing
+        # a typo only buys a guaranteed 404.
+        email_info = self.email_verify.verify(email) if email else None
+        gravatar = (
+            self.gravatar.lookup(email)
+            if email and (email_info is None or email_info.syntax_valid)
+            else None
+        )
 
         started = time.perf_counter()
         cached_payload = self._read_cache(phone)
@@ -76,11 +85,12 @@ class VerificationService:
                 api_key_id=api_key_id,
                 cached=True,
                 number_info=number_info,
+                email_info=email_info,
                 gravatar=gravatar,
             )
             return self._to_response(
                 phone, result, elapsed_ms, cached=True,
-                number_info=number_info, gravatar=gravatar,
+                number_info=number_info, email_info=email_info, gravatar=gravatar,
             )
 
         try:
@@ -95,6 +105,7 @@ class VerificationService:
                 api_key_id=api_key_id,
                 error_code=exc.code,
                 number_info=number_info,
+                email_info=email_info,
                 gravatar=gravatar,
             )
             logger.warning(
@@ -116,6 +127,7 @@ class VerificationService:
             api_key_id=api_key_id,
             cached=False,
             number_info=number_info,
+            email_info=email_info,
             gravatar=gravatar,
         )
         logger.info(
@@ -127,7 +139,7 @@ class VerificationService:
         )
         return self._to_response(
             phone, result, elapsed_ms, cached=False,
-            number_info=number_info, gravatar=gravatar,
+            number_info=number_info, email_info=email_info, gravatar=gravatar,
         )
 
     # --- Quota -----------------------------------------------------------
@@ -196,6 +208,7 @@ class VerificationService:
         api_key_id: uuid.UUID | None,
         cached: bool,
         number_info: NumberInfo | None = None,
+        email_info: EmailInfo | None = None,
         gravatar: GravatarProfile | None = None,
     ) -> SearchLog:
         log = self.logs.create(
@@ -211,6 +224,7 @@ class VerificationService:
             is_business=result.is_business,
             profile_photo_url=result.profile_photo_url,
             number_info=number_info.model_dump(mode="json") if number_info else None,
+            email_info=email_info.model_dump(mode="json") if email_info else None,
             gravatar=gravatar.model_dump(mode="json") if gravatar else None,
             response_time_ms=elapsed_ms,
             cached=cached,
@@ -234,6 +248,7 @@ class VerificationService:
         api_key_id: uuid.UUID | None,
         error_code: str,
         number_info: NumberInfo | None = None,
+        email_info: EmailInfo | None = None,
         gravatar: GravatarProfile | None = None,
     ) -> None:
         self.logs.create(
@@ -244,6 +259,7 @@ class VerificationService:
             status=LookupStatus.FAILED,
             source=source,
             number_info=number_info.model_dump(mode="json") if number_info else None,
+            email_info=email_info.model_dump(mode="json") if email_info else None,
             gravatar=gravatar.model_dump(mode="json") if gravatar else None,
             response_time_ms=elapsed_ms,
             error_code=error_code,
@@ -286,6 +302,7 @@ class VerificationService:
         *,
         cached: bool,
         number_info: NumberInfo | None = None,
+        email_info: EmailInfo | None = None,
         gravatar: GravatarProfile | None = None,
     ) -> CheckResponse:
         return CheckResponse(
@@ -299,6 +316,7 @@ class VerificationService:
             profile_photo_id=result.profile_photo_id,
             device_count=result.device_count,
             number_info=number_info or VerificationService._number_info(phone),
+            email_info=email_info,
             gravatar=gravatar,
             response_time_ms=elapsed_ms,
             cached=cached,

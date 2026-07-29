@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     # lookup. 0 disables the cache.
     GRAVATAR_CACHE_TTL_SECONDS: int = 3600
 
+    # --- Email verification ----------------------------------------------
+    # Verdict on an email passed alongside the number: syntax, then whether the
+    # domain publishes a mail server. Never opens an SMTP session — probing a
+    # single mailbox is what gets a sender blocklisted.
+    EMAIL_VERIFY_ENABLED: bool = True
+    # Off skips the DNS lookup entirely: syntax and the reputation flags still
+    # come back, but `deliverable` is null rather than true or false.
+    EMAIL_VERIFY_CHECK_MX: bool = True
+    EMAIL_VERIFY_DNS_TIMEOUT_SECONDS: float = 3.0
+    # MX records change rarely. 0 disables the cache.
+    EMAIL_VERIFY_CACHE_TTL_SECONDS: int = 3600
+
     # --- Rate limiting ---------------------------------------------------
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_ENABLED: bool = True

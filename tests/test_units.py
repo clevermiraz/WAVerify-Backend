@@ -1,5 +1,6 @@
 """Unit tests for pure helpers — no database required."""
 
+import dns.resolver
 import pytest
 
 from app.core.exceptions import InvalidTokenError, ValidationError
@@ -14,6 +15,7 @@ from app.core.security import (
     password_reset_fingerprint,
     verify_password,
 )
+from app.services.email_verify import EmailVerificationService
 from app.utils.phone import mask_phone, parse_phone
 
 
@@ -99,3 +101,137 @@ class TestApiKeys:
 
     def test_keys_are_unique(self) -> None:
         assert len({generate_api_key()[0] for _ in range(50)}) == 50
+
+
+class _FakeMX:
+    def __init__(self, preference: int, exchange: str) -> None:
+        self.preference = preference
+        self.exchange = exchange
+
+    def __str__(self) -> str:
+        return self.exchange
+
+
+class _FakeResolver:
+    """Stands in for dns.resolver.Resolver so no test touches the network.
+
+    `answers` maps a record type to either a list of records or an exception
+    class to raise, which is how the real resolver reports "no such domain"
+    and "no records of this type".
+    """
+
+    answers: dict = {}
+
+    def __init__(self) -> None:
+        self.lifetime = None
+        self.timeout = None
+
+    def resolve(self, domain: str, record_type: str):
+        outcome = self.answers.get(record_type, dns.resolver.NoAnswer)
+        if isinstance(outcome, type) and issubclass(outcome, Exception):
+            raise outcome()
+        return outcome
+
+
+@pytest.fixture
+def fake_dns(monkeypatch):
+    def _install(**answers):
+        resolver = type("_Resolver", (_FakeResolver,), {"answers": answers})
+        monkeypatch.setattr("dns.resolver.Resolver", resolver)
+
+    return _install
+
+
+class TestEmailVerification:
+    service = EmailVerificationService()
+
+    def test_rejects_malformed_without_raising(self) -> None:
+        info = self.service.verify("not-an-email")
+
+        # The whole point of the change: a bad address is a verdict, not a 422.
+        assert info is not None
+        assert info.syntax_valid is False
+        assert info.status == "invalid_syntax"
+        assert info.reason
+
+    def test_accepts_a_domain_with_mx(self, fake_dns) -> None:
+        fake_dns(MX=[_FakeMX(20, "alt.acme.com."), _FakeMX(10, "mx.acme.com.")])
+        info = self.service.verify(" Jane@ACME.com ")
+
+        assert info.syntax_valid is True
+        assert info.email == "jane@acme.com"
+        assert info.domain == "acme.com"
+        assert info.deliverable is True
+        # Sorted by preference, so the primary is usable as mx_hosts[0].
+        assert info.mx_hosts == ["mx.acme.com", "alt.acme.com"]
+        assert info.status == "valid"
+
+    def test_missing_domain_is_undeliverable(self, fake_dns) -> None:
+        fake_dns(MX=dns.resolver.NXDOMAIN)
+        info = self.service.verify("jane@acme.com")
+
+        assert info.deliverable is False
+        assert info.status == "domain_not_found"
+
+    def test_falls_back_to_an_address_record(self, fake_dns) -> None:
+        # RFC 5321 §5.1: no MX but an A record still means "send mail here".
+        fake_dns(MX=dns.resolver.NoAnswer, A=["203.0.113.10"])
+        info = self.service.verify("jane@acme.com")
+
+        assert info.deliverable is True
+        assert info.mx_hosts == ["acme.com"]
+        assert info.status == "valid"
+
+    def test_no_mx_and_no_address_record(self, fake_dns) -> None:
+        fake_dns(MX=dns.resolver.NoAnswer, A=dns.resolver.NoAnswer,
+                 AAAA=dns.resolver.NoAnswer)
+        info = self.service.verify("jane@acme.com")
+
+        assert info.deliverable is False
+        assert info.status == "no_mail_server"
+
+    def test_null_mx_refuses_mail(self, fake_dns) -> None:
+        # RFC 7505: a single "." target is an explicit "never send here".
+        fake_dns(MX=[_FakeMX(0, ".")])
+        info = self.service.verify("jane@acme.com")
+
+        assert info.deliverable is False
+        assert info.status == "no_mail_server"
+
+    def test_dns_failure_is_unknown_not_undeliverable(self, fake_dns) -> None:
+        fake_dns(MX=dns.resolver.LifetimeTimeout)
+        info = self.service.verify("jane@acme.com")
+
+        # A resolver problem is ours, not the address's — it must never be
+        # reported as a bad email.
+        assert info.deliverable is None
+        assert info.status == "unknown"
+        assert info.syntax_valid is True
+
+    def test_disposable_outranks_a_working_domain(self, fake_dns) -> None:
+        fake_dns(MX=[_FakeMX(10, "mail.mailinator.com.")])
+        info = self.service.verify("someone@mailinator.com")
+
+        assert info.deliverable is True
+        assert info.disposable is True
+        assert info.status == "disposable"
+
+    def test_flags_role_and_free_provider(self, fake_dns) -> None:
+        fake_dns(MX=[_FakeMX(10, "gmail-smtp-in.l.google.com.")])
+        info = self.service.verify("support@gmail.com")
+
+        assert info.role_account is True
+        assert info.free_provider is True
+        # Neither is a fault, so the verdict stays valid.
+        assert info.status == "valid"
+
+    def test_personal_address_is_not_a_role_account(self, fake_dns) -> None:
+        fake_dns(MX=[_FakeMX(10, "mx.acme.com.")])
+        info = self.service.verify("jane.roe@acme.com")
+
+        assert info.role_account is False
+        assert info.free_provider is False
+
+    def test_returns_nothing_when_there_is_no_email(self) -> None:
+        assert self.service.verify("") is None
+        assert self.service.verify("   ") is None
