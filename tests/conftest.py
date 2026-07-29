@@ -13,6 +13,7 @@ import os
 import uuid
 from collections.abc import Iterator
 
+import dns.resolver
 import pytest
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-000000")
@@ -50,6 +51,35 @@ def mock_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(DirectWhatsAppProvider, "__init__", fake_init)
     monkeypatch.setattr(DirectWhatsAppProvider, "check", fake_check)
     monkeypatch.setattr(DirectWhatsAppProvider, "close", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+def mock_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer every MX lookup locally.
+
+    Email verification resolves DNS, so without this the suite would depend on
+    a working resolver and on domains it does not control — slow, and failing
+    for reasons that have nothing to do with the code.
+    """
+
+    class _MX:
+        preference = 10
+        exchange = "mx.test-mail.invalid."
+
+        def __str__(self) -> str:
+            return self.exchange
+
+    class _Resolver:
+        def __init__(self) -> None:
+            self.lifetime = None
+            self.timeout = None
+
+        def resolve(self, domain: str, record_type: str):
+            if record_type == "MX":
+                return [_MX()]
+            raise dns.resolver.NoAnswer()
+
+    monkeypatch.setattr("dns.resolver.Resolver", _Resolver)
 
 
 

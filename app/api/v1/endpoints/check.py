@@ -11,6 +11,8 @@ from app.models.search_log import LookupStatus
 from app.schemas.check import (
     CheckRequest,
     CheckResponse,
+    EmailCheckRequest,
+    EmailCheckResponse,
     SearchLogDetail,
     SearchLogRead,
 )
@@ -56,6 +58,37 @@ def check_number(
         api_key_id=principal.api_key_id,
         email=payload.email,
     )
+
+
+@router.post(
+    "/check/email",
+    response_model=EmailCheckResponse,
+    summary="Check an email address on its own",
+    responses={
+        401: {"description": "Your API key is missing, wrong, or was deleted"},
+        422: {"description": "The email is missing or longer than 254 characters"},
+        429: {"description": "You sent too many requests in one minute"},
+        502: {"description": "Email checking is turned off on this server"},
+    },
+)
+def check_email(
+    payload: EmailCheckRequest,
+    principal: RateLimitedPrincipalDep,
+    verification: VerificationServiceDep,
+) -> EmailCheckResponse:
+    """Check one email address, with no phone number involved.
+
+    Use this when the email is all you have. You get the same `email_info`
+    that `POST /check` returns, plus any public Gravatar profile.
+
+    This never contacts WhatsApp, so it keeps working even when a number
+    lookup cannot — and it does not use up any of your monthly requests. Only
+    the per-minute rate limit applies.
+
+    A malformed address is a successful request: you get `200` with
+    `email_info.syntax_valid: false`, never a `422`.
+    """
+    return verification.check_email(user=principal.user, raw_email=payload.email)
 
 
 @router.get("/searches", response_model=Page[SearchLogRead], tags=["History"])

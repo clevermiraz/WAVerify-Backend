@@ -98,23 +98,49 @@ def system_settings(_: AdminUserDep, service: AdminServiceDep) -> SystemSettings
 
 @router.get("/whatsapp/accounts")
 def list_whatsapp_accounts(_: AdminUserDep, db: Session = Depends(get_session)) -> dict:
-    """List all WhatsApp accounts from Postgres and their usage."""
+    """List all WhatsApp accounts, reporting the status lookups actually use.
+
+    The stored status is only ever as fresh as the last event this process
+    saw, so after a restart it still claims "connected" for a session that has
+    not reconnected. Since `/check` picks accounts by their live in-memory
+    status, believing the stored one makes the panel show a healthy pool while
+    every lookup fails with `no_accounts` — so the live status wins here, and
+    `stored_status` is kept alongside for when the two disagree.
+    """
+    from app.services.providers.direct import DirectWhatsAppProvider
+    from app.services.providers.registry import get_provider
+
     accounts = db.query(WhatsAppAccount).order_by(
         WhatsAppAccount.created_at.desc()).all()
 
-    # We could fetch real-time statuses from provider, but DB has the sync state
+    provider = get_provider()
+    live: dict[str, str] = {}
+    if isinstance(provider, DirectWhatsAppProvider):
+        live = {
+            status["id"]: status["status"]
+            for status in provider.get_all_statuses()
+        }
+
     result = []
     for acc in accounts:
+        # No client at all means the pool never loaded this account — a real
+        # state, and not the same as one that loaded and failed to connect.
+        live_status = live.get(str(acc.id), "not_loaded")
         result.append({
             "id": str(acc.id),
             "phone_number": acc.phone_number,
-            "status": acc.status,
+            "status": live_status,
+            "stored_status": acc.status,
             "is_default": acc.is_default,
             "total_lookups_performed": acc.total_lookups_performed,
             "lookups_this_month": acc.lookups_this_month,
             "created_at": acc.created_at.isoformat()
         })
-    return {"accounts": result}
+    return {
+        "accounts": result,
+        # What /check will do right now, so the panel can say so plainly.
+        "usable_accounts": sum(1 for s in live.values() if s == "connected"),
+    }
 
 
 @router.post("/whatsapp/accounts", status_code=201)

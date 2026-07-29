@@ -377,3 +377,124 @@ class TestErrorEnvelope:
 
     def test_health(self, client: TestClient) -> None:
         assert client.get(f"{API}/health").json()["status"] in {"ok", "degraded"}
+
+
+class TestEmailCheck:
+    """`POST /check/email` — the email on its own, with no phone number."""
+
+    def test_verifies_an_email_without_a_phone(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        response = client.post(
+            f"{API}/check/email",
+            json={"email": "jane@acme.com"},
+            headers=registered["headers"],
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+        assert body["email"] == "jane@acme.com"
+        assert body["email_info"]["syntax_valid"] is True
+        assert body["email_info"]["deliverable"] is True
+        assert body["email_info"]["status"] == "valid"
+        assert body["response_time_ms"] > 0
+
+    def test_malformed_email_is_answered_not_rejected(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        response = client.post(
+            f"{API}/check/email",
+            json={"email": "not-an-email"},
+            headers=registered["headers"],
+        )
+        # The whole point: a bad address is a verdict, not a failed request.
+        assert response.status_code == 200
+        info = response.json()["email_info"]
+        assert info["syntax_valid"] is False
+        assert info["status"] == "invalid_syntax"
+        assert info["reason"]
+
+    def test_flags_a_disposable_domain(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        response = client.post(
+            f"{API}/check/email",
+            json={"email": "someone@mailinator.com"},
+            headers=registered["headers"],
+        )
+        info = response.json()["email_info"]
+        assert info["disposable"] is True
+        assert info["status"] == "disposable"
+
+    def test_does_not_use_up_a_request(
+        self, client: TestClient, registered: dict
+    ) -> None:
+        stats = f"{API}/dashboard/stats"
+        before = client.get(stats, headers=registered["headers"]).json()
+        client.post(
+            f"{API}/check/email",
+            json={"email": "jane@acme.com"},
+            headers=registered["headers"],
+        )
+        after = client.get(stats, headers=registered["headers"]).json()
+        assert after["remaining_credits"] == before["remaining_credits"]
+
+    def test_requires_authentication(self, client: TestClient) -> None:
+        response = client.post(f"{API}/check/email", json={"email": "jane@acme.com"})
+        assert response.status_code == 401
+
+    def test_works_when_no_whatsapp_account_is_connected(
+        self, client: TestClient, registered: dict, monkeypatch
+    ) -> None:
+        """The reason this route exists: an empty pool must not affect it."""
+        from app.core.exceptions import ProviderError
+        from app.services.providers.direct import DirectWhatsAppProvider
+
+        def dead_pool(self, phone):
+            raise ProviderError("No WhatsApp account is connected", code="no_accounts")
+
+        monkeypatch.setattr(DirectWhatsAppProvider, "check", dead_pool)
+
+        # The number route is down…
+        assert (
+            client.post(
+                f"{API}/check",
+                json={"phone": "+8801712345678"},
+                headers=registered["headers"],
+            ).status_code
+            == 502
+        )
+        # …while the email route still answers.
+        response = client.post(
+            f"{API}/check/email",
+            json={"email": "jane@acme.com"},
+            headers=registered["headers"],
+        )
+        assert response.status_code == 200
+        assert response.json()["email_info"]["status"] == "valid"
+
+
+class TestFailedLookupBilling:
+    def test_a_provider_failure_does_not_use_up_a_request(
+        self, client: TestClient, registered: dict, monkeypatch
+    ) -> None:
+        """An outage is ours, not the caller's — it must not cost them credit."""
+        from app.core.exceptions import ProviderError
+        from app.services.providers.direct import DirectWhatsAppProvider
+
+        def dead_pool(self, phone):
+            raise ProviderError("No WhatsApp account is connected", code="no_accounts")
+
+        monkeypatch.setattr(DirectWhatsAppProvider, "check", dead_pool)
+
+        stats = f"{API}/dashboard/stats"
+        before = client.get(stats, headers=registered["headers"]).json()
+        response = client.post(
+            f"{API}/check",
+            json={"phone": "+8801712345678"},
+            headers=registered["headers"],
+        )
+        assert response.status_code == 502
+
+        after = client.get(stats, headers=registered["headers"]).json()
+        assert after["remaining_credits"] == before["remaining_credits"]

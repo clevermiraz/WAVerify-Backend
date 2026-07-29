@@ -360,7 +360,20 @@ class DirectWhatsAppProvider(WhatsAppProvider):
     def check(self, phone: ParsedPhone) -> ProviderResult:
         client = self._get_available_client()
         if not client:
-            raise ProviderError("No connected WhatsApp accounts available in the pool", code="no_accounts")
+            # Log the pool's actual make-up: "no accounts at all" and "three
+            # accounts, none of which reconnected" need different fixes, and
+            # the message alone never told them apart.
+            states: dict[str, int] = {}
+            for pooled in self._clients.values():
+                states[pooled.status] = states.get(pooled.status, 0) + 1
+            logger.error(
+                "provider.direct_no_accounts", pooled=len(self._clients), states=states
+            )
+            raise ProviderError(
+                "No WhatsApp account is connected right now, so numbers cannot "
+                "be checked. Email checks are unaffected.",
+                code="no_accounts",
+            )
             
         try:
             payload = client.check(phone.e164)

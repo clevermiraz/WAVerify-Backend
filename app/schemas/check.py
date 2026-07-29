@@ -35,6 +35,18 @@ class CheckRequest(BaseModel):
     )
 
 
+class EmailCheckRequest(BaseModel):
+    email: str = Field(
+        min_length=1,
+        max_length=254,
+        description=(
+            "The email address to check. A malformed address is a result, not "
+            "an error: you get `200` with `email_info.syntax_valid: false`."
+        ),
+        examples=["someone@example.com"],
+    )
+
+
 class NumberInfo(BaseModel):
     """Facts derived from the number itself, without contacting WhatsApp.
 
@@ -301,6 +313,59 @@ class CheckResponse(BaseModel):
                 "response_time_ms": 214,
                 "cached": False,
                 "checked_at": "2026-07-23T10:04:11Z",
+            }
+        }
+    }
+
+
+class EmailCheckResponse(BaseModel):
+    """What `POST /api/v1/check/email` sends back.
+
+    Nothing here touches WhatsApp, so this route keeps working when the
+    account pool is empty or down — which is the whole point of having it
+    separate from `/check`.
+    """
+
+    success: bool = Field(default=True, description="Always true when the request worked.")
+    email: str = Field(description="The address you sent, normalised.")
+    email_info: EmailInfo = Field(description="The verdict on the address.")
+    gravatar: GravatarProfile | None = Field(
+        default=None,
+        description=(
+            "Public Gravatar profile for the address, when it has one. null "
+            "when it does not, or when the address was too malformed to look up."
+        ),
+    )
+    response_time_ms: int = Field(
+        description="How long the check took on our server, in milliseconds."
+    )
+    cached: bool = Field(
+        default=False,
+        description="true if we answered from a saved recent result.",
+    )
+    checked_at: datetime = Field(description="Date and time of the check, in UTC.")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "email": "jane@acme.com",
+                "email_info": {
+                    "email": "jane@acme.com",
+                    "syntax_valid": True,
+                    "domain": "acme.com",
+                    "deliverable": True,
+                    "mx_hosts": ["mx.acme.com"],
+                    "disposable": False,
+                    "role_account": False,
+                    "free_provider": False,
+                    "status": "valid",
+                    "reason": None,
+                },
+                "gravatar": None,
+                "response_time_ms": 96,
+                "cached": False,
+                "checked_at": "2026-07-29T10:04:11Z",
             }
         }
     }

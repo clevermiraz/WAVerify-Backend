@@ -20,7 +20,13 @@ from app.models.search_log import LookupSource, LookupStatus, SearchLog
 from app.models.user import User
 from app.repositories.search_log import SearchLogRepository
 from app.repositories.usage import UsageRepository
-from app.schemas.check import CheckResponse, EmailInfo, GravatarProfile, NumberInfo
+from app.schemas.check import (
+    CheckResponse,
+    EmailCheckResponse,
+    EmailInfo,
+    GravatarProfile,
+    NumberInfo,
+)
 from app.services.billing import BillingService
 from app.services.email_verify import EmailVerificationService
 from app.services.gravatar import GravatarService
@@ -140,6 +146,50 @@ class VerificationService:
         return self._to_response(
             phone, result, elapsed_ms, cached=False,
             number_info=number_info, email_info=email_info, gravatar=gravatar,
+        )
+
+    def check_email(self, *, user: User, raw_email: str) -> EmailCheckResponse:
+        """Verify an email on its own, with no phone number involved.
+
+        Deliberately never calls the WhatsApp provider, so this keeps
+        answering while the account pool is empty or disconnected — the whole
+        reason it is a separate route rather than `/check` with the phone
+        omitted.
+
+        It also does not touch quota or the search log. Sending an email
+        alongside a number has always been free, and billing it only when it
+        arrives on its own would be an odd rule to explain; the per-minute
+        rate limit is what bounds it. Both are one-line changes if that is
+        not the policy you want.
+        """
+        started = time.perf_counter()
+
+        email_info = self.email_verify.verify(raw_email)
+        if email_info is None:
+            # Only reachable with EMAIL_VERIFY_ENABLED off, which is a server
+            # decision the caller cannot see or fix — so say so rather than
+            # returning a verdict we did not actually reach.
+            raise ProviderError(
+                "Email verification is turned off on this server.",
+                code="email_verify_disabled",
+            )
+
+        gravatar = self.gravatar.lookup(raw_email) if email_info.syntax_valid else None
+        elapsed_ms = self._elapsed_ms(started)
+
+        logger.info(
+            "verification.email_completed",
+            user_id=str(user.id),
+            status=email_info.status,
+            response_time_ms=elapsed_ms,
+        )
+        return EmailCheckResponse(
+            email=email_info.email,
+            email_info=email_info,
+            gravatar=gravatar,
+            response_time_ms=elapsed_ms,
+            cached=False,
+            checked_at=datetime.now(UTC),
         )
 
     # --- Quota -----------------------------------------------------------
@@ -270,9 +320,11 @@ class VerificationService:
             succeeded=False,
             response_time_ms=elapsed_ms,
         )
-        self.billing.deduct_quota(user.id)
-        # The provider failed, not the caller — commit the audit trail before
-        # the exception handler unwinds the request.
+        # No quota is deducted here. The provider failed, not the caller, and
+        # charging for an outage means a broken account pool silently drains
+        # every customer's balance. The attempt is still logged and counted in
+        # usage, so the success rate stays honest — it just is not billed.
+        # Commit the audit trail before the exception handler unwinds.
         self.session.commit()
 
     # --- Helpers ---------------------------------------------------------
